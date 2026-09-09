@@ -29,7 +29,9 @@ export default function App() {
         ))}
       </nav>
 
-      <ActiveView />
+      <div key={activeTab} className="fade-in">
+        <ActiveView />
+      </div>
     </main>
   );
 }

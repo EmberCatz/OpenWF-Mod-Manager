@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModCategory, ModWithVersions } from "@openwf-mod-manager/shared";
-import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
+import { ALL_VERSIONS_TAG, GAME_VERSION_GROUPS } from "@openwf-mod-manager/shared";
+import type { GameVersionGroup } from "@openwf-mod-manager/shared";
 import { addModVersion, fetchModList, uploadNewMod } from "../api";
 import { pickModFileToUpload, readFileBytes } from "../native";
 import { getApiKey } from "../settings";
@@ -18,7 +19,50 @@ const initialNewModForm = {
   screenshotUrls: "",
 };
 
+function GroupRow({ group, selected, isAll, onToggleGroup, onToggleVersion, forceOpen }: {
+  group: GameVersionGroup;
+  selected: string[];
+  isAll: boolean;
+  onToggleGroup: (group: GameVersionGroup) => void;
+  onToggleVersion: (v: string) => void;
+  forceOpen: boolean;
+}) {
+  const allSelected = !isAll && group.versions.every((v) => selected.includes(v));
+  const someSelected = !isAll && !allSelected && group.versions.some((v) => selected.includes(v));
+  const checkboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (checkboxRef.current) checkboxRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  return (
+    <details className="version-picker__group" open={forceOpen}>
+      <summary>
+        <input
+          ref={checkboxRef}
+          type="checkbox"
+          checked={allSelected}
+          disabled={isAll}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => onToggleGroup(group)}
+        />
+        <span className="version-picker__group-title">{group.title}</span>
+        <span className="muted">({group.versions.length})</span>
+      </summary>
+      <div className="version-picker__group-versions">
+        {group.versions.map((v) => (
+          <label key={v} className="version-picker__row">
+            <input type="checkbox" checked={!isAll && selected.includes(v)} disabled={isAll} onChange={() => onToggleVersion(v)} />
+            <span>{v}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function GameVersionPicker({ selected, onChange }: { selected: string[]; onChange: (tags: string[]) => void }) {
+  const [search, setSearch] = useState("");
   const isAll = selected.length === 0 || selected.includes(ALL_VERSIONS_TAG);
 
   function toggleAll() {
@@ -30,18 +74,46 @@ function GameVersionPicker({ selected, onChange }: { selected: string[]; onChang
     onChange(base.includes(v) ? base.filter((x) => x !== v) : [...base, v]);
   }
 
+  function toggleGroup(group: GameVersionGroup) {
+    const base = isAll ? [] : selected;
+    const allSelected = group.versions.every((v) => base.includes(v));
+    onChange(allSelected ? base.filter((v) => !group.versions.includes(v)) : [...new Set([...base, ...group.versions])]);
+  }
+
+  const query = search.trim().toLowerCase();
+  const filteredGroups = query
+    ? GAME_VERSION_GROUPS.map((g) => ({
+        ...g,
+        versions: g.title.toLowerCase().includes(query) ? g.versions : g.versions.filter((v) => v.includes(query)),
+      })).filter((g) => g.versions.length > 0)
+    : GAME_VERSION_GROUPS;
+
   return (
     <div className="version-picker">
+      <input
+        type="text"
+        className="version-picker__search"
+        placeholder="Search versions or update name…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
       <label className="version-picker__row version-picker__row--all">
         <input type="checkbox" checked={isAll} onChange={toggleAll} />
         <span>All Versions</span>
       </label>
-      {GAME_VERSIONS.map((v) => (
-        <label key={v} className="version-picker__row">
-          <input type="checkbox" checked={!isAll && selected.includes(v)} disabled={isAll} onChange={() => toggleVersion(v)} />
-          <span>{v}</span>
-        </label>
-      ))}
+      <div className="version-picker__groups">
+        {filteredGroups.map((group) => (
+          <GroupRow
+            key={group.title}
+            group={group}
+            selected={selected}
+            isAll={isAll}
+            onToggleGroup={toggleGroup}
+            onToggleVersion={toggleVersion}
+            forceOpen={!!query}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -222,9 +294,10 @@ export default function Upload() {
       </div>
 
       <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
+        {status.kind === "working" && <span className="spinner" />}
         {status.kind === "working" ? "Uploading…" : "Upload"}
       </button>
-      {status.message && <p className={status.kind === "error" ? "error" : "muted"}>{status.message}</p>}
+      {status.message && <p className={`fade-in ${status.kind === "error" ? "error" : "muted"}`}>{status.message}</p>}
     </div>
   );
 }

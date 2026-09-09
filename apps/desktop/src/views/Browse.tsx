@@ -21,7 +21,8 @@ function targetFolderFor(category: string): string | null {
 
 function formatGameVersions(tags: string[]): string {
   if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";
-  return tags.join(", ");
+  if (tags.length <= 3) return tags.join(", ");
+  return `${tags.slice(0, 3).join(", ")} +${tags.length - 3} more`;
 }
 
 export default function Browse() {
@@ -81,19 +82,19 @@ export default function Browse() {
     }
   }
 
-  if (loading) return <p>Loading mods…</p>;
+  if (loading) return <p><span className="spinner" /> Loading mods…</p>;
   if (loadError) return <p className="error">{loadError}</p>;
-  if (mods.length === 0) return <p className="muted">No mods yet — check back soon.</p>;
+  if (mods.length === 0) return <p className="muted fade-in">No mods yet — check back soon.</p>;
 
   return (
     <ul className="mod-list">
-      {mods.map((mod) => {
+      {mods.map((mod, i) => {
         const version = mod.versions[0];
         const action = actions[mod.id] ?? { status: "idle" };
         const canAutoInstall = mod.category === "metadata-patch" || mod.category === "pluto-script";
 
         return (
-          <li key={mod.id} className="mod-card">
+          <li key={mod.id} className="mod-card fade-in" style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}>
             <div className="mod-card__body">
               {mod.thumbnailUrl && <img className="mod-card__thumb" src={mod.thumbnailUrl} alt="" />}
               <div className="mod-card__main">
@@ -112,11 +113,12 @@ export default function Browse() {
                       disabled={action.status === "working"}
                       onClick={() => (canAutoInstall ? handleInstall(mod) : handleDownload(mod))}
                     >
+                      {action.status === "working" && <span className="spinner" />}
                       {action.status === "working" ? "Working…" : canAutoInstall ? "Install" : "Download"}
                     </button>
                   )}
                   {action.message && (
-                    <span className={action.status === "error" ? "error" : "muted"}>{action.message}</span>
+                    <span className={`fade-in ${action.status === "error" ? "error" : "muted"}`}>{action.message}</span>
                   )}
                 </div>
               </div>
