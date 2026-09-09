@@ -34,6 +34,12 @@ export default function App() {
       <div key={activeTab} className="fade-in">
         <ActiveView />
       </div>
+
+      <footer className="app-footer">
+        Unofficial, fan-made tool — not affiliated with, endorsed by, or
+        sponsored by Digital Extremes Ltd. WARFRAME® is a registered
+        trademark of Digital Extremes Ltd. Full disclaimer in Settings.
+      </footer>
     </main>
   );
 }
