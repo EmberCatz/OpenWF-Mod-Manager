@@ -11,6 +11,7 @@ export interface Mod {
   category: ModCategory;
   thumbnailUrl: string | null; // external link only — never hosted by this project, see docs/architecture.md
   screenshotUrls: string[]; // external links only, same reasoning
+  tags: string[]; // free-form, user-defined (Notion-style) — unlike gameVersions, not validated against a fixed list
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }
@@ -45,6 +46,7 @@ export interface UploadMetadata {
   gameVersions?: string[]; // defaults to ["all"] server-side if omitted
   thumbnailUrl?: string; // external link only — see Mod.thumbnailUrl
   screenshotUrls?: string[]; // external links only — see Mod.screenshotUrls
+  tags?: string[]; // free-form — see Mod.tags
 }
 
 export interface ApiError {

@@ -5,6 +5,7 @@ import type { GameVersionGroup } from "@openwf-mod-manager/shared";
 import { addModVersion, fetchModList, uploadNewMod } from "../api";
 import { pickModFileToUpload, readFileBytes } from "../native";
 import { getApiKey } from "../settings";
+import TagInput from "../components/TagInput";
 
 type Mode = "new" | "update";
 
@@ -17,6 +18,7 @@ const initialNewModForm = {
   changelog: "",
   thumbnailUrl: "",
   screenshotUrls: "",
+  tags: [] as string[],
 };
 
 function GroupRow({ group, selected, isAll, onToggleGroup, onToggleVersion, forceOpen }: {
@@ -42,7 +44,6 @@ function GroupRow({ group, selected, isAll, onToggleGroup, onToggleVersion, forc
           ref={checkboxRef}
           type="checkbox"
           checked={allSelected}
-          disabled={isAll}
           onClick={(e) => e.stopPropagation()}
           onChange={() => onToggleGroup(group)}
         />
@@ -52,7 +53,7 @@ function GroupRow({ group, selected, isAll, onToggleGroup, onToggleVersion, forc
       <div className="version-picker__group-versions">
         {group.versions.map((v) => (
           <label key={v} className="version-picker__row">
-            <input type="checkbox" checked={!isAll && selected.includes(v)} disabled={isAll} onChange={() => onToggleVersion(v)} />
+            <input type="checkbox" checked={!isAll && selected.includes(v)} onChange={() => onToggleVersion(v)} />
             <span>{v}</span>
           </label>
         ))}
@@ -132,13 +133,17 @@ export default function Upload() {
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "error"; message?: string }>({ kind: "idle" });
 
   useEffect(() => {
-    if (mode === "update" && existingMods.length === 0) {
+    // Fetched once regardless of mode: "update" needs it for the mod
+    // picker, "new" needs it for tag autocomplete suggestions.
+    if (existingMods.length === 0) {
       fetchModList().then((mods) => {
         setExistingMods(mods);
         if (mods.length > 0) setSelectedModId(mods[0].id);
       });
     }
-  }, [mode]);
+  }, []);
+
+  const existingTags = [...new Set(existingMods.flatMap((m) => m.tags))].sort();
 
   async function pickFile() {
     const path = await pickModFileToUpload();
@@ -181,6 +186,7 @@ export default function Upload() {
             gameVersions,
             thumbnailUrl: newModForm.thumbnailUrl || undefined,
             screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
+            tags: newModForm.tags,
           },
           bytes,
           fileName,
@@ -259,6 +265,11 @@ export default function Upload() {
             <span>Screenshot URLs (optional)</span>
             <span className="hint">One link per line, same as above.</span>
             <textarea value={newModForm.screenshotUrls} onChange={(e) => setNewModForm({ ...newModForm, screenshotUrls: e.target.value })} rows={3} placeholder="https://...&#10;https://..." />
+          </label>
+          <label className="field">
+            <span>Tags (optional)</span>
+            <span className="hint">Free-form — type and press Enter. Suggestions are pulled from tags other mods already use.</span>
+            <TagInput tags={newModForm.tags} onChange={(tags) => setNewModForm({ ...newModForm, tags })} suggestions={existingTags} />
           </label>
         </>
       ) : (

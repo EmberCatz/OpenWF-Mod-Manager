@@ -145,6 +145,23 @@ offer "select this whole update" as a shortcut instead of checking dozens
 of individual patch numbers by hand, via a searchable, collapsible list
 (`Upload.tsx`).
 
+## Free-form tags
+
+Separate from `gameVersions` (compatibility, validated against a fixed
+list), `Mod.tags` is unrestricted, user-defined, Notion-style tagging —
+"QoL", "combat", "meme," whatever a modder wants, stored as a JSON array
+on the mod itself (not per-version). Server-side validation
+(`apps/api/src/routes/mods.ts::validateTags`) only caps count (15) and
+length (30 chars/tag) and dedupes — it deliberately does not enforce a
+fixed vocabulary, unlike game versions.
+
+`TagInput.tsx` is the entry widget: type + Enter/comma commits a chip,
+Backspace on an empty field pops the last one, and a dropdown suggests
+tags already used on *other* mods (computed client-side from the already-
+fetched mod list, no separate endpoint) so spellings converge naturally
+("QoL" vs "qol") without a moderator having to enforce it. Browse shows
+tags as clickable badges that filter the list — click again to clear.
+
 ## Data model
 
 See [`apps/api/schema.sql`](../apps/api/schema.sql) and the mirrored
@@ -156,7 +173,8 @@ lightweight).
   out-of-band (manually, via `wrangler d1 execute`) rather than
   self-service, so the upload endpoint isn't an open target.
 - `mods` — one row per mod (slug id, name, author, category, owner,
-  thumbnail/screenshot URLs — external links only, see below).
+  thumbnail/screenshot URLs — external links only, see below — and
+  free-form user-defined tags, see below).
 - `mod_versions` — one row per uploaded version of a mod (original file
   name, GitHub release id, download URL, checksum, game-version
   compatibility tags, changelog). A mod can have many versions; the list

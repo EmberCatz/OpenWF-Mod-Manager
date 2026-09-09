@@ -13,6 +13,8 @@ export const mods = new Hono<{ Bindings: Env }>();
 // limit is 2 GB, far beyond anything this project needs.
 const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_SCREENSHOTS = 10;
+const MAX_TAGS = 15;
+const MAX_TAG_LENGTH = 30;
 
 // Single-file mods (the common case) upload a raw .pluto/.txt directly —
 // no zip/extraction step. .zip is still accepted for mods that need more
@@ -69,6 +71,18 @@ function validateScreenshotUrls(input: unknown): string[] | null {
   return null;
 }
 
+// Free-form, user-defined tags (Notion-style) — unlike gameVersions,
+// deliberately not validated against a fixed list. Just trimmed,
+// deduplicated, and capped so nobody can stuff megabytes of text in here.
+function validateTags(input: unknown): string[] | null {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > MAX_TAGS) return null;
+  if (!input.every((v) => typeof v === "string")) return null;
+  const cleaned = input.map((v) => v.trim()).filter((v) => v.length > 0 && v.length <= MAX_TAG_LENGTH);
+  if (cleaned.length !== input.length) return null; // something was empty or too long
+  return [...new Set(cleaned)];
+}
+
 function rowToVersion(row: any): ModVersion {
   return {
     id: row.id,
@@ -93,6 +107,7 @@ function rowToMod(row: any): Mod {
     category: row.category,
     thumbnailUrl: row.thumbnail_url ?? null,
     screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
+    tags: JSON.parse(row.tags ?? "[]"),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -195,6 +210,9 @@ mods.post("/", async (c) => {
   const screenshotUrls = validateScreenshotUrls(metadata.screenshotUrls);
   if (!screenshotUrls) return c.json({ error: `screenshotUrls must be an array of http(s) URLs, max ${MAX_SCREENSHOTS}` }, 400);
 
+  const tags = validateTags(metadata.tags);
+  if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);
+
   const modId = slugify(metadata.name);
   if (!modId) return c.json({ error: "name produced an empty slug" }, 400);
 
@@ -214,8 +232,8 @@ mods.post("/", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, description, category, thumbnail_url, screenshot_urls, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mods (id, name, author, description, category, thumbnail_url, screenshot_urls, tags, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         modId,
         metadata.name,
@@ -224,6 +242,7 @@ mods.post("/", async (c) => {
         metadata.category,
         metadata.thumbnailUrl ?? null,
         JSON.stringify(screenshotUrls),
+        JSON.stringify(tags),
         modder.id,
         now,
         now
