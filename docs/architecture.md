@@ -60,6 +60,36 @@ The list/detail response embeds each version's GitHub release asset URL
 fetches that URL directly — the Worker is never in the request path for
 the actual file transfer.
 
+## Install flow (desktop app)
+
+The point of a *mod manager* over a plain downloader is placing files
+correctly, not just fetching them. Per
+[docs/metadata-patching-guide.md](../../docs/metadata-patching-guide.md) and
+[docs/pluto-scripting-guide.md](../../docs/pluto-scripting-guide.md) in the
+parent project, the Bootstrapper reads mods from two fixed locations under
+the Warframe install folder:
+
+| `mods.category` | Installs to |
+|---|---|
+| `metadata-patch` | `<install root>/OpenWF/Metadata Patches/` |
+| `pluto-script` | `<install root>/OpenWF/Scripts/` |
+| `other` | No defined location — offered as a plain "Download" (user picks a save path) instead of "Install". |
+
+The install root is a one-time setting (Settings tab), picked via the
+native folder dialog and stored in the webview's `localStorage`
+(`apps/desktop/src/settings.ts` — local-only, never sent anywhere).
+
+Extraction itself is a Rust command
+(`apps/desktop/src-tauri/src/commands.rs::install_mod_zip`), not JS,
+deliberately: the `zip` crate's `enclosed_name()` is the standard zip-slip
+guard (it returns `None`, entry silently skipped, for anything using `..`
+or an absolute path), and a plain Tauri command has ordinary OS file
+access without needing to keep the fs-plugin's scope config in sync with
+whatever folder the user picks. The frontend never touches the filesystem
+directly — `apps/desktop/src/native.ts` is the only bridge, wrapping three
+commands: `read_file_bytes` (for the upload form), `write_file_bytes` (for
+the plain "Download" path), and `install_mod_zip`.
+
 ## Data model
 
 See [`apps/api/schema.sql`](../apps/api/schema.sql) and the mirrored
@@ -84,6 +114,8 @@ lightweight).
 | `GET /api/mods/:id` | none | One mod's full version history. |
 | `POST /api/mods` | API key | Create a mod + its first version (creates a GitHub Release + uploads the zip as its asset). |
 | `POST /api/mods/:id/versions` | API key (owner only) | Add a new version to an existing mod (same GitHub flow). |
+| `DELETE /api/mods/:id/versions/:version` | API key (owner only) | Remove one version (D1 row, then best-effort GitHub release delete). |
+| `DELETE /api/mods/:id` | API key (owner only) | Remove a mod and all its versions (cascades in D1, then best-effort GitHub release deletes). |
 
 `src/github.ts` wraps the three GitHub REST calls involved: create a
 release, upload an asset to it, and (best-effort, on a D1 write failure
@@ -104,6 +136,9 @@ after the GitHub side already succeeded) delete the orphaned release.
   Wrangler secret, never sent to or readable by the desktop client. Scope
   it to "Contents: Read and write" on just the storage repo (fine-grained
   PAT), not a classic all-repo token.
+- **Zip-slip protection is implemented** in the desktop app's install
+  command (see "Install flow" above) — extraction can't write outside the
+  chosen install root.
 - **Not yet implemented, do before any public upload endpoint goes live:**
   - Rate limiting on `POST /api/mods*` (Cloudflare has a free rate-limiting
     rule at the zone level, or a KV/D1-backed counter in the Worker) — the
@@ -111,10 +146,6 @@ after the GitHub side already succeeded) delete the orphaned release.
     repo clutter, not money, but still worth throttling.
   - Zip content validation server-side — right now any `.zip` under the
     size cap is accepted as-is.
-  - Zip-slip protection **in the desktop app** when a downloaded mod is
-    extracted into the local Warframe/SpaceNinjaServer directory — sanitize
-    every entry path before writing, since extraction happens outside the
-    Worker's control entirely.
 - CORS is currently wide open (`app.use("*", cors())`) since there's no
   cookie/session to protect — fine given bearer-token auth, but worth
   narrowing once a production domain exists.
@@ -138,13 +169,17 @@ npm run dev:api                                # wrangler dev, http://127.0.0.1:
 npm run dev:desktop
 ```
 
-## Known gaps in this scaffold
+## Known gaps
 
-- `wrangler.toml` has placeholder `GITHUB_OWNER` / `GITHUB_REPO` values —
-  point them at whichever repo will host the release assets (can be this
-  same repo, or a dedicated storage-only one to keep the app repo's
-  release list clean).
-- No modder-onboarding tooling yet — issuing a new API key is a manual
-  `INSERT INTO modders` today.
+- Issuing a new API key still requires running `apps/api/scripts/create-modder.mjs`
+  and applying the printed `wrangler d1 execute` commands by hand — no
+  self-service signup route (deliberately, per the auth notes above).
 - `apps/desktop/src-tauri/icons/` currently holds a flat placeholder color,
   not a real logo — see the README in that folder.
+- The upload form only creates new mods (`POST /api/mods`) — adding a
+  version to an existing mod (`POST /api/mods/:id/versions`) works fine
+  from the API but has no UI yet.
+- No "installed version" tracking in the app yet — Browse always shows
+  "Install"/"Download", never "Installed"/"Update available", even for a
+  mod already placed on disk.
+- Rate limiting on the upload endpoints (see Security notes above).

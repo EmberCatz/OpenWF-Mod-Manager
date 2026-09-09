@@ -2,9 +2,11 @@
   color-scheme: dark;
   --bg: #16181d;
   --panel: #1e2129;
+  --panel-alt: #262a34;
   --text: #e6e6e6;
   --muted: #9aa0a8;
   --accent: #5b8cff;
+  --border: #2c303a;
 }
 
 body {
@@ -20,8 +22,56 @@ body {
   padding: 2rem 1.5rem;
 }
 
+.muted {
+  color: var(--muted);
+}
+
 .error {
   color: #ff6b6b;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.button {
+  background: var(--panel-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1020;
+  font-weight: 600;
 }
 
 .mod-list {
@@ -58,4 +108,64 @@ body {
 .mod-card__description {
   margin: 0.4rem 0 0;
   color: var(--muted);
+}
+
+.mod-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.badge {
+  background: var(--panel-alt);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 1rem;
+}
+
+.field span:first-child {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.field .hint {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.field input,
+.field select,
+.field textarea {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.field__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.field__row input {
+  flex: 1;
+}
+
+.settings,
+.upload-form {
+  max-width: 480px;
 }
