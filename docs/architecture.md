@@ -119,20 +119,31 @@ it changes the risk profile.
 
 ## Game-version compatibility tags
 
-Each mod version can be tagged with which OpenWF/Warframe major updates
-it's compatible with, or the `"all"` sentinel
+Each mod version can be tagged with which specific OpenWF/Warframe patch
+numbers it's compatible with (e.g. `38.0.7`), or the `"all"` sentinel
 (`packages/shared/src/gameVersions.ts`) meaning "works everywhere,"
-mutually exclusive with picking specific ones. The list is a **hardcoded
-constant**, not fetched at runtime, sourced from
-[about.openwf.io/versions](https://about.openwf.io/versions) (major update
-names only — individual build/patch numbers are too granular to be a
-useful compatibility tag) — best-effort, pulled via an AI-summarized page
-fetch rather than a raw scrape, so it's worth checking against the live
-page rather than assumed exhaustive/exact. The API validates
-`gameVersions` against this same list server-side
+mutually exclusive with picking specific ones. Patch-level granularity was
+a deliberate choice over just major-update names — a metadata patch or
+script can break between two patches of the same update, so "works on
+1999" isn't precise enough to be a useful tag.
+
+`GAME_VERSIONS` (188 entries, newest first) is a **hardcoded constant**,
+not fetched at runtime, derived from a raw scrape of
+[about.openwf.io/versions](https://about.openwf.io/versions) — every
+distinct version number on that page, both `Update patch` and `Steam
+release` rows, excluding rows marked `<` (those denote "some version
+before X," not a specific number, so they'd be meaningless as a tag). The
+API validates `gameVersions` against this same list server-side
 (`apps/api/src/routes/mods.ts::validateGameVersions`), so a tag always
-means something real. Updating the list means editing that one file — no
-migration needed, since it's just a validation set, not stored in D1.
+means something real. Updating the list means re-scraping that page and
+regenerating the file — no migration needed, since it's just a validation
+set, not stored in D1.
+
+`GAME_VERSION_GROUPS` is the same 188 versions grouped by their major
+update name (65 groups) — purely a UI convenience so the upload form can
+offer "select this whole update" as a shortcut instead of checking dozens
+of individual patch numbers by hand, via a searchable, collapsible list
+(`Upload.tsx`).
 
 ## Data model
 
@@ -233,6 +244,7 @@ npm run dev:desktop
   "Install"/"Download", never "Installed"/"Update available", even for a
   mod already placed on disk.
 - Rate limiting on the upload endpoints (see Security notes above).
-- The game-versions list (`packages/shared/src/gameVersions.ts`) is
-  best-effort, pulled via an AI-summarized fetch of about.openwf.io —
-  worth a manual pass against the live page to confirm it's complete/exact.
+- The game-versions list (`packages/shared/src/gameVersions.ts`) is a
+  point-in-time scrape of about.openwf.io — it won't pick up new patches
+  released after it was generated until someone re-scrapes and
+  regenerates the file.
