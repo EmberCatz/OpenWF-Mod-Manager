@@ -169,9 +169,15 @@ TypeScript types in [`packages/shared/src/types.ts`](../packages/shared/src/type
 (kept in sync by hand — no ORM/codegen layer, deliberately, to stay
 lightweight).
 
-- `modders` — one row per person allowed to upload. API keys are issued
-  out-of-band (manually, via `wrangler d1 execute`) rather than
-  self-service, so the upload endpoint isn't an open target.
+- `modders` — one row per person allowed to upload. Two ways in: a
+  self-service username/password account (`routes/auth.ts`), or an
+  out-of-band API key issued manually via `wrangler d1 execute`
+  (`scripts/create-modder.mjs`, kept for existing keys / local testing).
+  Both resolve to the same row and work interchangeably everywhere auth is
+  checked — see `authenticate()` in `src/auth.ts`.
+- `sessions` — a logged-in session from username/password login. The
+  token is checked the same way an API key is (hashed, compared against
+  D1), so nothing else in the API needs to know which kind it's looking at.
 - `mods` — one row per mod (slug id, name, author, category, owner,
   thumbnail/screenshot URLs — external links only, see below — and
   free-form user-defined tags, see below).
@@ -193,10 +199,36 @@ shape but doesn't retroactively apply to a DB that already exists.
 |---|---|---|
 | `GET /api/mods` | none | List all mods + latest version + download URL. |
 | `GET /api/mods/:id` | none | One mod's full version history. |
-| `POST /api/mods` | API key | Create a mod + its first version (creates a GitHub Release + uploads the zip as its asset). |
-| `POST /api/mods/:id/versions` | API key (owner only) | Add a new version to an existing mod (same GitHub flow). |
-| `DELETE /api/mods/:id/versions/:version` | API key (owner only) | Remove one version (D1 row, then best-effort GitHub release delete). |
-| `DELETE /api/mods/:id` | API key (owner only) | Remove a mod and all its versions (cascades in D1, then best-effort GitHub release deletes). |
+| `GET /api/mods/mine` | token | Mods owned by the caller — "My Mods" tab. |
+| `POST /api/mods` | token | Create a mod + its first version (creates a GitHub Release + uploads the zip as its asset). |
+| `POST /api/mods/:id/versions` | token (owner only) | Add a new version to an existing mod (same GitHub flow). |
+| `DELETE /api/mods/:id/versions/:version` | token (owner only) | Remove one version (D1 row, then best-effort GitHub release delete). |
+| `DELETE /api/mods/:id` | token (owner only) | Remove a mod and all its versions (cascades in D1, then best-effort GitHub release deletes). |
+
+"Token" above means either kind `authenticate()` accepts (see below) — an
+API key or a session token, both sent as `Authorization: Bearer <...>`.
+
+## Accounts (`apps/api/src/routes/auth.ts`)
+
+Self-service username/password accounts, added alongside the older
+manually-issued API keys (still supported, see the `modders` row above).
+No email is collected — the account is just a username and a salted
+password hash, on purpose, to keep this to the minimum personal data
+actually needed.
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `POST /api/auth/signup` | none | Create an account, returns a session token (also logs you in). |
+| `POST /api/auth/login` | none | `{ username, password }` → session token. |
+| `POST /api/auth/logout` | token | Invalidates the session token used to call it. |
+| `GET /api/auth/me` | token | Resolves the current token to `{ id, username }`. |
+| `DELETE /api/auth/me` | token | Deletes the account. Refuses (409) while it still owns mods — delete/hand those off via My Mods first. |
+
+Passwords are hashed with PBKDF2-SHA256 (`src/passwords.ts`) via the Web
+Crypto API already available in the Workers runtime — no bcrypt/argon2
+dependency, since those need native bindings that don't run here. Session
+tokens are random, stored hashed the same way API keys are, and expire
+after 30 days.
 
 `src/github.ts` wraps the three GitHub REST calls involved: create a
 release, upload an asset to it, and (best-effort, on a D1 write failure
@@ -207,12 +239,11 @@ after the GitHub side already succeeded) delete the orphaned release.
 - **No component in this stack requires a payment method.** Workers Free,
   D1 Free, and GitHub are all card-free by design — this was a deliberate
   constraint, not an accident (see "Why GitHub Releases, not R2" above).
-- **Upload auth is in place** (`src/auth.ts`): `Authorization: Bearer <key>`,
-  hashed with a server-side salt before comparing against D1. Keys are
-  provisioned manually — there's intentionally no public signup route yet.
-  This is what actually stops "someone uploads excessive data" — a
-  stranger can't call `POST /api/mods*` without a leaked key, regardless
-  of what it's backed by.
+- **Upload auth is in place** (`src/auth.ts`): `Authorization: Bearer <token>`,
+  hashed before comparing against D1 — either an API key or a self-service
+  account's session token (see "Accounts" above). This is what actually
+  stops "someone uploads excessive data" — a stranger can't call
+  `POST /api/mods*` without a valid token, regardless of what it's backed by.
 - **The GitHub PAT (`GITHUB_TOKEN`) is server-side only** — set as a
   Wrangler secret, never sent to or readable by the desktop client. Scope
   it to "Contents: Read and write" on just the storage repo (fine-grained

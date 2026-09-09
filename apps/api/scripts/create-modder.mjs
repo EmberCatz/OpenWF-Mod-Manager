@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Issues a new modder API key. There's no self-service signup route by
-// design (see docs/architecture.md) — this is the out-of-band way an
-// admin hands one out, including to themselves for local testing.
+// Issues a new modder API key the old, out-of-band way. Most people should
+// just sign up in the app now (Settings tab → Sign up, POST /api/auth/signup,
+// see docs/architecture.md § Accounts) — this script is kept around for
+// local testing and for the handful of API keys issued before that existed.
 //
 // Usage:
 //   UPLOAD_API_KEY_SALT=<salt> node scripts/create-modder.mjs --name "Your Name"

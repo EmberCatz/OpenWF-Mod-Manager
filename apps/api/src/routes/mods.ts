@@ -180,10 +180,9 @@ mods.get("/", async (c) => {
   return c.json(list);
 });
 
-// GET /api/mods/mine — every mod owned by the authenticated modder key,
-// for the "My Mods" tab. Registered ahead of GET /:id so "mine" is never
-// swallowed as a mod id. There's no broader account system yet (see
-// docs/architecture.md) — a modder API key is the closest thing to one.
+// GET /api/mods/mine — every mod owned by the authenticated modder, for
+// the "My Mods" tab. Registered ahead of GET /:id so "mine" is never
+// swallowed as a mod id.
 mods.get("/mine", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);

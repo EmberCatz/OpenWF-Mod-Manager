@@ -7,6 +7,11 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Self-service accounts — username/password signup and login in
+      Settings, replacing manually-issued API keys as the normal path
+      (`routes/auth.ts`, `sessions` table). Old keys still work side by
+      side. My Mods/Upload didn't need any changes — a session token just
+      goes in the same slot an API key used to.
 - [x] Grid view: uniform card size, thumbnail always above the title, no
       description, full-width Install button that becomes a split
       Uninstall/▾Reinstall button once installed (`SplitButton.tsx`)
@@ -21,10 +26,9 @@ testing) rather than letting them evaporate.
       (`thumbnail_position` column) instead
 - [x] Fullscreen popup for the file preview, plus basic Pluto syntax
       highlighting (`plutoHighlight.tsx` — hand-rolled tokenizer, no dep)
-- [x] "My Mods" tab — lists mods owned by the current API key, with
+- [x] "My Mods" tab — lists mods owned by whoever's logged in, with
       delete-version/delete-mod actions wired to the (already-existing)
-      DELETE endpoints. Real data, but "mine" == "this API key" until an
-      actual account system exists.
+      DELETE endpoints.
 - [x] Installed/Uninstall/Reinstall now have color + icon cues (green
       check, red bin, blue repeat-arrow) instead of identical grey buttons
 - [x] File preview in the mod detail view — the latest version's file(s),
@@ -48,8 +52,6 @@ testing) rather than letting them evaporate.
 - [ ] Rate limiting on upload endpoints (`POST /api/mods*`) — flagged since
       the earliest security pass, still open. See
       `docs/architecture.md` § Security & billing-risk notes.
-- [ ] Self-service API key signup — currently fully manual
-      (`apps/api/scripts/create-modder.mjs` + hand-run `wrangler d1 execute`)
 - [ ] Real app icon — placeholder flat-color square right now
       (`apps/desktop/src-tauri/icons/`)
 - [ ] Tauri auto-updater, once builds are actually distributed as installers

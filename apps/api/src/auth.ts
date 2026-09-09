@@ -1,10 +1,16 @@
 import type { Context } from "hono";
 import type { Env } from "./env";
 
-async function sha256Hex(input: string): Promise<string> {
+export async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Same hashing used for both old-style API keys and new session tokens —
+// UPLOAD_API_KEY_SALT acts as a pepper either way, see hashApiKey below.
+export async function hashToken(token: string, salt: string): Promise<string> {
+  return sha256Hex(token + salt);
 }
 
 export interface Modder {
@@ -12,27 +18,40 @@ export interface Modder {
   name: string;
 }
 
-// Looks up the modder behind the Authorization: Bearer <api-key> header.
-// Returns null if the header is missing/malformed or the key doesn't match
-// any modder in D1 — callers should respond 401 in that case.
+// Looks up the modder behind the Authorization: Bearer <token> header.
+// The token can be either an out-of-band-issued API key (modders.api_key_hash)
+// or a session token from username+password login (sessions.token_hash,
+// routes/auth.ts) — both resolve to the same Modder shape, so every other
+// route stays oblivious to which one was used. Returns null if the header
+// is missing/malformed or nothing matches — callers should respond 401.
 export async function authenticate(c: Context<{ Bindings: Env }>): Promise<Modder | null> {
   const header = c.req.header("Authorization");
   if (!header?.startsWith("Bearer ")) return null;
 
-  const apiKey = header.slice("Bearer ".length).trim();
-  if (!apiKey) return null;
+  const token = header.slice("Bearer ".length).trim();
+  if (!token) return null;
 
-  const hash = await sha256Hex(apiKey + c.env.UPLOAD_API_KEY_SALT);
-  const row = await c.env.DB.prepare("SELECT id, name FROM modders WHERE api_key_hash = ?")
+  const hash = await hashToken(token, c.env.UPLOAD_API_KEY_SALT);
+
+  const byApiKey = await c.env.DB.prepare("SELECT id, name FROM modders WHERE api_key_hash = ?")
+    .bind(hash)
+    .first<Modder>();
+  if (byApiKey) return byApiKey;
+
+  const bySession = await c.env.DB.prepare(
+    `SELECT m.id, m.name FROM sessions s
+     JOIN modders m ON m.id = s.modder_id
+     WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
+  )
     .bind(hash)
     .first<Modder>();
 
-  return row ?? null;
+  return bySession ?? null;
 }
 
 // Used only by the (out-of-band) modder-onboarding script, not by any HTTP
-// route — new API keys are issued manually via `wrangler d1 execute`, not
-// self-service, to keep the upload endpoint from being an open abuse target.
+// route — this style of key is still supported (see authenticate() above)
+// but new accounts should go through routes/auth.ts's self-service signup.
 export async function hashApiKey(apiKey: string, salt: string): Promise<string> {
   return sha256Hex(apiKey + salt);
 }

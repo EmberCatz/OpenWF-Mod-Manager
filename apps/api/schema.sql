@@ -1,12 +1,30 @@
 -- D1 schema for the OpenWF Mod Manager.
 -- Apply with `npm run db:init` (local) or `npm run db:init:remote` (deployed DB).
 
+-- api_key_hash is nullable so self-service accounts (username+password,
+-- authenticated via the sessions table below) don't need one — it only
+-- exists for the older out-of-band-issued keys (scripts/create-modder.mjs).
+-- Both auth styles resolve to the same modder row; see auth.ts.
 CREATE TABLE IF NOT EXISTS modders (
     id            TEXT PRIMARY KEY,       -- uuid
     name          TEXT NOT NULL,
-    api_key_hash  TEXT NOT NULL UNIQUE,   -- sha256(api_key + UPLOAD_API_KEY_SALT), hex
+    api_key_hash  TEXT UNIQUE,            -- sha256(api_key + UPLOAD_API_KEY_SALT), hex
+    username      TEXT UNIQUE,            -- self-service account login, see routes/auth.ts
+    password_hash TEXT,                   -- pbkdf2$<iterations>$<saltB64>$<hashB64>, see passwords.ts — never the plaintext
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- A logged-in session from username+password login. token_hash is checked
+-- the same way api_key_hash is (see auth.ts's authenticate()), so a
+-- session token works anywhere an API key does.
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash  TEXT PRIMARY KEY,   -- sha256(token + UPLOAD_API_KEY_SALT), hex
+    modder_id   TEXT NOT NULL REFERENCES modders(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_modder_id ON sessions (modder_id);
 
 CREATE TABLE IF NOT EXISTS mods (
     id              TEXT PRIMARY KEY,        -- slug, e.g. "ultimate-database"

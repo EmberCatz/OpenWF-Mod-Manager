@@ -4,10 +4,9 @@ import { deleteMod, deleteModVersion, fetchMyMods } from "../api";
 import { getApiKey } from "../settings";
 import { TrashIcon } from "../icons";
 
-// "Mine" today just means "uploaded with the API key currently set in
-// Settings" — there's no broader account system yet (see
-// docs/architecture.md). This tab is the placeholder for when there is
-// one; the underlying data (owner_id) is already real.
+// "Mine" resolves through whatever's in Settings — a self-service account
+// session or an older API key, both work the same way here (see
+// docs/architecture.md § Accounts).
 export default function MyMods() {
   const apiKey = getApiKey();
   const [mods, setMods] = useState<ModWithVersions[]>([]);

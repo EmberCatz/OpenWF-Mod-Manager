@@ -16,9 +16,8 @@ export async function fetchMod(id: string): Promise<ModWithVersions> {
   return res.json();
 }
 
-// For the "My Mods" tab — every mod owned by this API key. There's no
-// broader account system yet (see docs/architecture.md), so the API key
-// itself is what "mine" means today.
+// For the "My Mods" tab — every mod owned by whoever this token belongs to
+// (a logged-in account or an older API key, see docs/architecture.md § Accounts).
 export async function fetchMyMods(apiKey: string): Promise<ModWithVersions[]> {
   const res = await fetch(`${API_BASE_URL}/api/mods/mine`, {
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -143,4 +142,36 @@ export async function fetchReviewSummary(modId: string, reviewerId: string): Pro
 
 export async function postReview(modId: string, reviewerId: string, rating: number): Promise<ReviewSummary> {
   return postJson(`/api/mods/${modId}/reviews`, { reviewerId, rating });
+}
+
+export interface Account {
+  id: string;
+  username: string;
+}
+
+export async function signup(username: string, password: string): Promise<{ token: string; username: string }> {
+  return postJson("/api/auth/signup", { username, password });
+}
+
+export async function login(username: string, password: string): Promise<{ token: string; username: string }> {
+  return postJson("/api/auth/login", { username, password });
+}
+
+export async function logout(token: string): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => {}); // best-effort — an already-invalid token is fine to just drop locally
+}
+
+export async function fetchMe(token: string): Promise<Account> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`not logged in: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteAccount(token: string): Promise<void> {
+  return authedDelete("/api/auth/me", token);
 }

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env } from "./env";
 import { mods } from "./routes/mods";
+import { auth } from "./routes/auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -13,6 +14,7 @@ app.use("*", cors());
 app.get("/", (c) => c.json({ name: "openwf-mod-manager-api", status: "ok" }));
 
 app.route("/api/mods", mods);
+app.route("/api/auth", auth);
 
 // Without this, an uncaught exception (e.g. the GitHub API call in
 // src/github.ts failing/rate-limiting) falls through to a plain-text
