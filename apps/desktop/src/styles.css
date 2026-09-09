@@ -110,11 +110,62 @@ body {
   color: var(--muted);
 }
 
+.mod-card__body {
+  display: flex;
+  gap: 0.85rem;
+}
+
+.mod-card__thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--panel-alt);
+}
+
+.mod-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
 .mod-card__footer {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tabs--sub {
+  margin: 0 0 1.25rem;
+}
+
+.version-picker {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.version-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  padding: 0.15rem 0;
+}
+
+.version-picker__row--all {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.2rem;
+  font-weight: 600;
 }
 
 .badge {

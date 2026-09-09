@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { authenticate } from "../auth";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
+import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
 import type { Mod, ModVersion, ModWithVersions, UploadMetadata } from "@openwf-mod-manager/shared";
 
 export const mods = new Hono<{ Bindings: Env }>();
@@ -10,7 +11,14 @@ export const mods = new Hono<{ Bindings: Env }>();
 // bundles — real-world examples top out well under 1 MB. This cap is
 // generous headroom, not a sizing assumption; GitHub's own release-asset
 // limit is 2 GB, far beyond anything this project needs.
-const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_SCREENSHOTS = 10;
+
+// Single-file mods (the common case) upload a raw .pluto/.txt directly —
+// no zip/extraction step. .zip is still accepted for mods that need more
+// than one file (e.g. a script with a companion data file, see
+// docs/pluto-scripting-guide.md).
+const ALLOWED_EXTENSIONS = [".zip", ".pluto", ".txt"];
 
 function slugify(name: string): string {
   return name
@@ -25,14 +33,52 @@ async function sha256HexOf(buf: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function fileExtension(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i === -1 ? "" : name.slice(i).toLowerCase();
+}
+
+// Thumbnails/screenshots are external links only — this project never
+// stores or serves the image bytes itself (see docs/architecture.md,
+// "Images: external links only"). This just guards against non-http(s)
+// schemes ending up in an <img src> in the desktop app.
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+// Validates against the hardcoded GAME_VERSIONS list so a version's
+// compatibility tags always mean something real. "all" is a sentinel and
+// mutually exclusive with picking specific versions.
+function validateGameVersions(input: unknown): string[] | null {
+  if (input === undefined) return [ALL_VERSIONS_TAG];
+  if (!Array.isArray(input) || input.length === 0) return null;
+  if (input.length === 1 && input[0] === ALL_VERSIONS_TAG) return [ALL_VERSIONS_TAG];
+  if (input.every((v) => typeof v === "string" && GAME_VERSIONS.includes(v))) return input;
+  return null;
+}
+
+function validateScreenshotUrls(input: unknown): string[] | null {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > MAX_SCREENSHOTS) return null;
+  if (input.every((v) => typeof v === "string" && isHttpUrl(v))) return input;
+  return null;
+}
+
 function rowToVersion(row: any): ModVersion {
   return {
     id: row.id,
     modId: row.mod_id,
     version: row.version,
+    fileName: row.file_name,
     downloadUrl: row.download_url,
     fileSize: row.file_size,
     checksum: row.checksum,
+    gameVersions: JSON.parse(row.game_versions ?? '["all"]'),
     changelog: row.changelog,
     createdAt: row.created_at,
   };
@@ -45,6 +91,8 @@ function rowToMod(row: any): Mod {
     author: row.author,
     description: row.description,
     category: row.category,
+    thumbnailUrl: row.thumbnail_url ?? null,
+    screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -52,10 +100,10 @@ function rowToMod(row: any): Mod {
 
 // GET /api/mods — list every mod with its latest version, for the desktop
 // app's browse/list view. Download URLs point straight at a GitHub release
-// asset; the client never re-requests the Worker to fetch the actual zip.
+// asset; the client never re-requests the Worker to fetch the actual file.
 mods.get("/", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT m.*, v.id as v_id, v.version, v.download_url, v.file_size, v.checksum, v.changelog, v.created_at as v_created_at
+    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at
      FROM mods m
      LEFT JOIN mod_versions v ON v.mod_id = m.id
      WHERE v.id = (SELECT id FROM mod_versions WHERE mod_id = m.id ORDER BY created_at DESC LIMIT 1)
@@ -71,9 +119,11 @@ mods.get("/", async (c) => {
             id: row.v_id,
             mod_id: row.id,
             version: row.version,
+            file_name: row.file_name,
             download_url: row.download_url,
             file_size: row.file_size,
             checksum: row.checksum,
+            game_versions: row.game_versions,
             changelog: row.changelog,
             created_at: row.v_created_at,
           }),
@@ -104,11 +154,11 @@ mods.get("/:id", async (c) => {
 });
 
 // POST /api/mods — create a new mod + its first version.
-// multipart/form-data: "file" (the zip), "metadata" (JSON body matching
-// UploadMetadata). Requires a modder API key (see auth.ts) so uploads
-// can't be spammed anonymously — the zip is pushed to a GitHub Release,
-// which has no billing surface at all, so the only real cost of abuse here
-// is repo clutter, not money.
+// multipart/form-data: "file" (.zip, .pluto, or .txt), "metadata" (JSON
+// body matching UploadMetadata). Requires a modder API key (see auth.ts)
+// so uploads can't be spammed anonymously — the file is pushed to a
+// GitHub Release, which has no billing surface at all, so the only real
+// cost of abuse here is repo clutter, not money.
 mods.post("/", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
@@ -119,11 +169,11 @@ mods.post("/", async (c) => {
   if (!(file instanceof File) || typeof metadataRaw !== "string") {
     return c.json({ error: "expected multipart fields 'file' and 'metadata'" }, 400);
   }
-  if (file.size > MAX_ZIP_BYTES) {
-    return c.json({ error: `file exceeds ${MAX_ZIP_BYTES} byte limit` }, 413);
+  if (file.size > MAX_FILE_BYTES) {
+    return c.json({ error: `file exceeds ${MAX_FILE_BYTES} byte limit` }, 413);
   }
-  if (!file.name.toLowerCase().endsWith(".zip")) {
-    return c.json({ error: "only .zip uploads are accepted" }, 400);
+  if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
+    return c.json({ error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted` }, 400);
   }
 
   let metadata: UploadMetadata;
@@ -136,6 +186,15 @@ mods.post("/", async (c) => {
     return c.json({ error: "metadata requires name, author, category, version" }, 400);
   }
 
+  const gameVersions = validateGameVersions(metadata.gameVersions);
+  if (!gameVersions) return c.json({ error: "gameVersions must be a non-empty array of known versions, or omitted" }, 400);
+
+  if (metadata.thumbnailUrl !== undefined && !isHttpUrl(metadata.thumbnailUrl)) {
+    return c.json({ error: "thumbnailUrl must be an http(s) URL" }, 400);
+  }
+  const screenshotUrls = validateScreenshotUrls(metadata.screenshotUrls);
+  if (!screenshotUrls) return c.json({ error: `screenshotUrls must be an array of http(s) URLs, max ${MAX_SCREENSHOTS}` }, 400);
+
   const modId = slugify(metadata.name);
   if (!modId) return c.json({ error: "name produced an empty slug" }, 400);
 
@@ -146,21 +205,44 @@ mods.post("/", async (c) => {
 
   const buf = await file.arrayBuffer();
   const checksum = await sha256HexOf(buf);
+  const assetName = `${modId}-${metadata.version}${fileExtension(file.name)}`;
 
   const release = await createRelease(c.env, modId, metadata.version, metadata.changelog);
-  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, `${modId}-${metadata.version}.zip`, buf);
+  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, assetName, buf);
 
   const now = new Date().toISOString();
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, description, category, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(modId, metadata.name, metadata.author, metadata.description ?? "", metadata.category, modder.id, now, now),
+        `INSERT INTO mods (id, name, author, description, category, thumbnail_url, screenshot_urls, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        modId,
+        metadata.name,
+        metadata.author,
+        metadata.description ?? "",
+        metadata.category,
+        metadata.thumbnailUrl ?? null,
+        JSON.stringify(screenshotUrls),
+        modder.id,
+        now,
+        now
+      ),
       c.env.DB.prepare(
-        `INSERT INTO mod_versions (mod_id, version, download_url, github_release_id, file_size, checksum, changelog, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(modId, metadata.version, asset.browserDownloadUrl, release.id, file.size, checksum, metadata.changelog ?? null, now),
+        `INSERT INTO mod_versions (mod_id, version, file_name, download_url, github_release_id, file_size, checksum, game_versions, changelog, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        modId,
+        metadata.version,
+        file.name,
+        asset.browserDownloadUrl,
+        release.id,
+        file.size,
+        checksum,
+        JSON.stringify(gameVersions),
+        metadata.changelog ?? null,
+        now
+      ),
     ]);
   } catch (e) {
     await deleteReleaseBestEffort(c.env, release.id);
@@ -189,17 +271,23 @@ mods.post("/:id/versions", async (c) => {
   if (!(file instanceof File) || typeof metadataRaw !== "string") {
     return c.json({ error: "expected multipart fields 'file' and 'metadata'" }, 400);
   }
-  if (file.size > MAX_ZIP_BYTES) {
-    return c.json({ error: `file exceeds ${MAX_ZIP_BYTES} byte limit` }, 413);
+  if (file.size > MAX_FILE_BYTES) {
+    return c.json({ error: `file exceeds ${MAX_FILE_BYTES} byte limit` }, 413);
+  }
+  if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
+    return c.json({ error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted` }, 400);
   }
 
-  let metadata: Pick<UploadMetadata, "version" | "changelog">;
+  let metadata: Pick<UploadMetadata, "version" | "changelog" | "gameVersions">;
   try {
     metadata = JSON.parse(metadataRaw);
   } catch {
     return c.json({ error: "'metadata' field is not valid JSON" }, 400);
   }
   if (!metadata.version) return c.json({ error: "metadata requires version" }, 400);
+
+  const gameVersions = validateGameVersions(metadata.gameVersions);
+  if (!gameVersions) return c.json({ error: "gameVersions must be a non-empty array of known versions, or omitted" }, 400);
 
   const existingVersion = await c.env.DB.prepare("SELECT id FROM mod_versions WHERE mod_id = ? AND version = ?")
     .bind(modId, metadata.version)
@@ -210,17 +298,29 @@ mods.post("/:id/versions", async (c) => {
 
   const buf = await file.arrayBuffer();
   const checksum = await sha256HexOf(buf);
+  const assetName = `${modId}-${metadata.version}${fileExtension(file.name)}`;
 
   const release = await createRelease(c.env, modId, metadata.version, metadata.changelog);
-  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, `${modId}-${metadata.version}.zip`, buf);
+  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, assetName, buf);
 
   const now = new Date().toISOString();
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mod_versions (mod_id, version, download_url, github_release_id, file_size, checksum, changelog, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(modId, metadata.version, asset.browserDownloadUrl, release.id, file.size, checksum, metadata.changelog ?? null, now),
+        `INSERT INTO mod_versions (mod_id, version, file_name, download_url, github_release_id, file_size, checksum, game_versions, changelog, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        modId,
+        metadata.version,
+        file.name,
+        asset.browserDownloadUrl,
+        release.id,
+        file.size,
+        checksum,
+        JSON.stringify(gameVersions),
+        metadata.changelog ?? null,
+        now
+      ),
       c.env.DB.prepare("UPDATE mods SET updated_at = ? WHERE id = ?").bind(now, modId),
     ]);
   } catch (e) {

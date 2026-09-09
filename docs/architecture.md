@@ -66,29 +66,73 @@ The point of a *mod manager* over a plain downloader is placing files
 correctly, not just fetching them. Per
 [docs/metadata-patching-guide.md](../../docs/metadata-patching-guide.md) and
 [docs/pluto-scripting-guide.md](../../docs/pluto-scripting-guide.md) in the
-parent project, the Bootstrapper reads mods from two fixed locations under
+parent project, the Bootstrapper reads mods from two fixed folders under
 the Warframe install folder:
 
-| `mods.category` | Installs to |
+| `mods.category` | Installs to (Settings field) |
 |---|---|
-| `metadata-patch` | `<install root>/OpenWF/Metadata Patches/` |
-| `pluto-script` | `<install root>/OpenWF/Scripts/` |
+| `metadata-patch` | Metadata Patches folder — normally `<Warframe folder>/OpenWF/Metadata Patches/` |
+| `pluto-script` | Scripts folder — normally `<Warframe folder>/OpenWF/Scripts/` |
 | `other` | No defined location — offered as a plain "Download" (user picks a save path) instead of "Install". |
 
-The install root is a one-time setting (Settings tab), picked via the
-native folder dialog and stored in the webview's `localStorage`
-(`apps/desktop/src/settings.ts` — local-only, never sent anywhere).
+These are two independent settings (Settings tab, each its own folder
+dialog), not derived from one shared root — kept explicit rather than
+assumed, since not every install necessarily follows the same layout.
+Stored in the webview's `localStorage` (`apps/desktop/src/settings.ts` —
+local-only, never sent anywhere).
 
-Extraction itself is a Rust command
-(`apps/desktop/src-tauri/src/commands.rs::install_mod_zip`), not JS,
-deliberately: the `zip` crate's `enclosed_name()` is the standard zip-slip
-guard (it returns `None`, entry silently skipped, for anything using `..`
-or an absolute path), and a plain Tauri command has ordinary OS file
-access without needing to keep the fs-plugin's scope config in sync with
-whatever folder the user picks. The frontend never touches the filesystem
-directly — `apps/desktop/src/native.ts` is the only bridge, wrapping three
-commands: `read_file_bytes` (for the upload form), `write_file_bytes` (for
-the plain "Download" path), and `install_mod_zip`.
+**Raw file vs. zip**: most mods here are a single `.pluto` or `.txt` file,
+so uploads accept either that directly (no archive step) or a `.zip` for
+the minority of mods needing more than one file (e.g. a script with a
+companion data file, see the pluto-scripting guide). The desktop app picks
+the install path based on the downloaded version's `fileName` extension —
+`.zip` goes through extraction, anything else is placed directly under its
+own name.
+
+Both paths are Rust commands
+(`apps/desktop/src-tauri/src/commands.rs`), not JS, deliberately: a plain
+Tauri command has ordinary OS file access without needing to keep the
+fs-plugin's scope config in sync with whatever folder the user picks, and
+`install_mod_zip` uses the `zip` crate's `enclosed_name()` as its zip-slip
+guard (returns `None`, entry silently skipped, for anything using `..` or
+an absolute path). `install_mod_file` treats the server-supplied file name
+as untrusted too — only its bare filename component is used, so a crafted
+`../../evil.pluto` can't escape the target folder either. The frontend
+never touches the filesystem directly — `apps/desktop/src/native.ts` is
+the only bridge, wrapping four commands: `read_file_bytes` (upload form),
+`write_file_bytes` (plain "Download" path), `install_mod_file`, and
+`install_mod_zip`.
+
+## Images: external links only
+
+Thumbnails and screenshots are stored as **URLs to images already hosted
+elsewhere** (Discord CDN, Imgur, etc.) — `Mod.thumbnailUrl` /
+`Mod.screenshotUrls` are just strings, validated server-side to be
+`http(s)` URLs and nothing else. This project never receives, stores, or
+serves the actual image bytes. That was a deliberate choice over letting
+modders upload image files the same way as mod files: hosting arbitrary
+user-submitted images carries real liability (illegal content risk), and
+external hosts already run their own moderation/abuse-detection systems.
+This project just links to them. If hosted-image upload is ever wanted
+instead, revisit this decision explicitly rather than adding it quietly —
+it changes the risk profile.
+
+## Game-version compatibility tags
+
+Each mod version can be tagged with which OpenWF/Warframe major updates
+it's compatible with, or the `"all"` sentinel
+(`packages/shared/src/gameVersions.ts`) meaning "works everywhere,"
+mutually exclusive with picking specific ones. The list is a **hardcoded
+constant**, not fetched at runtime, sourced from
+[about.openwf.io/versions](https://about.openwf.io/versions) (major update
+names only — individual build/patch numbers are too granular to be a
+useful compatibility tag) — best-effort, pulled via an AI-summarized page
+fetch rather than a raw scrape, so it's worth checking against the live
+page rather than assumed exhaustive/exact. The API validates
+`gameVersions` against this same list server-side
+(`apps/api/src/routes/mods.ts::validateGameVersions`), so a tag always
+means something real. Updating the list means editing that one file — no
+migration needed, since it's just a validation set, not stored in D1.
 
 ## Data model
 
@@ -100,11 +144,19 @@ lightweight).
 - `modders` — one row per person allowed to upload. API keys are issued
   out-of-band (manually, via `wrangler d1 execute`) rather than
   self-service, so the upload endpoint isn't an open target.
-- `mods` — one row per mod (slug id, name, author, category, owner).
-- `mod_versions` — one row per uploaded version of a mod (GitHub release
-  id, download URL, checksum, changelog). A mod can have many versions;
-  the list endpoint returns only the latest, the detail endpoint returns
-  full history.
+- `mods` — one row per mod (slug id, name, author, category, owner,
+  thumbnail/screenshot URLs — external links only, see below).
+- `mod_versions` — one row per uploaded version of a mod (original file
+  name, GitHub release id, download URL, checksum, game-version
+  compatibility tags, changelog). A mod can have many versions; the list
+  endpoint returns only the latest, the detail endpoint returns full
+  history.
+
+Schema changes after the initial version are applied via numbered files in
+[`apps/api/migrations/`](../apps/api/migrations/) (ALTER TABLE against the
+already-existing local/remote DBs) — `schema.sql` itself is only ever run
+against a fresh DB (`db:init`), so it's kept up to date with the final
+shape but doesn't retroactively apply to a DB that already exists.
 
 ## API surface (`apps/api/src/routes/mods.ts`)
 
@@ -144,8 +196,8 @@ after the GitHub side already succeeded) delete the orphaned release.
     rule at the zone level, or a KV/D1-backed counter in the Worker) — the
     residual abuse surface with a leaked key is GitHub API rate limits and
     repo clutter, not money, but still worth throttling.
-  - Zip content validation server-side — right now any `.zip` under the
-    size cap is accepted as-is.
+  - File content validation server-side — right now any file with an
+    allowed extension under the size cap is accepted as-is.
 - CORS is currently wide open (`app.use("*", cors())`) since there's no
   cookie/session to protect — fine given bearer-token auth, but worth
   narrowing once a production domain exists.
@@ -162,6 +214,7 @@ npm install                                   # from the repo root, installs all
 # API (Worker)
 wrangler d1 create openwf-mod-manager         # then paste the id into apps/api/wrangler.toml
 npm run db:init                               # applies apps/api/schema.sql to the local D1
+# apply any files under apps/api/migrations/ too, in order, if the DB predates them
 cp apps/api/.dev.vars.example apps/api/.dev.vars   # fill in UPLOAD_API_KEY_SALT + GITHUB_TOKEN
 npm run dev:api                                # wrangler dev, http://127.0.0.1:8787
 
@@ -176,10 +229,10 @@ npm run dev:desktop
   self-service signup route (deliberately, per the auth notes above).
 - `apps/desktop/src-tauri/icons/` currently holds a flat placeholder color,
   not a real logo — see the README in that folder.
-- The upload form only creates new mods (`POST /api/mods`) — adding a
-  version to an existing mod (`POST /api/mods/:id/versions`) works fine
-  from the API but has no UI yet.
 - No "installed version" tracking in the app yet — Browse always shows
   "Install"/"Download", never "Installed"/"Update available", even for a
   mod already placed on disk.
 - Rate limiting on the upload endpoints (see Security notes above).
+- The game-versions list (`packages/shared/src/gameVersions.ts`) is
+  best-effort, pulled via an AI-summarized fetch of about.openwf.io —
+  worth a manual pass against the live page to confirm it's complete/exact.

@@ -9,6 +9,8 @@ export interface Mod {
   author: string;
   description: string;
   category: ModCategory;
+  thumbnailUrl: string | null; // external link only — never hosted by this project, see docs/architecture.md
+  screenshotUrls: string[]; // external links only, same reasoning
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }
@@ -17,9 +19,11 @@ export interface ModVersion {
   id: number;
   modId: string;
   version: string; // e.g. "1.2.0" or a date tag
+  fileName: string; // original uploaded filename, e.g. "Swarm.pluto" or "my-mod.zip" — determines raw-file vs zip install handling
   downloadUrl: string; // GitHub release asset's browser_download_url — client fetches this directly, not through the API
   fileSize: number; // bytes
-  checksum: string; // sha256 of the zip, hex-encoded
+  checksum: string; // sha256 of the file, hex-encoded
+  gameVersions: string[]; // GAME_VERSIONS entries this version is tagged compatible with, or ["all"]
   changelog: string | null;
   createdAt: string; // ISO 8601
 }
@@ -38,6 +42,9 @@ export interface UploadMetadata {
   category: ModCategory;
   version: string;
   changelog?: string;
+  gameVersions?: string[]; // defaults to ["all"] server-side if omitted
+  thumbnailUrl?: string; // external link only — see Mod.thumbnailUrl
+  screenshotUrls?: string[]; // external links only — see Mod.screenshotUrls
 }
 
 export interface ApiError {

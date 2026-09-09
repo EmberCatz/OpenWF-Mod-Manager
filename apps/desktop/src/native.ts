@@ -7,23 +7,23 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 // file access from there, so there's no separate fs-scope config to keep
 // in sync.
 
-export async function pickInstallFolder(): Promise<string | null> {
-  const result = await open({ directory: true, title: "Select your Warframe install folder" });
+export async function pickFolder(title: string): Promise<string | null> {
+  const result = await open({ directory: true, title });
   return typeof result === "string" ? result : null;
 }
 
-export async function pickZipToUpload(): Promise<string | null> {
+export async function pickModFileToUpload(): Promise<string | null> {
   const result = await open({
     directory: false,
     multiple: false,
-    title: "Select a mod .zip to upload",
-    filters: [{ name: "Zip", extensions: ["zip"] }],
+    title: "Select a mod file to upload",
+    filters: [{ name: "Mod file", extensions: ["pluto", "txt", "zip"] }],
   });
   return typeof result === "string" ? result : null;
 }
 
 export async function pickSaveLocation(defaultFileName: string): Promise<string | null> {
-  const result = await save({ defaultPath: defaultFileName, filters: [{ name: "Zip", extensions: ["zip"] }] });
+  const result = await save({ defaultPath: defaultFileName });
   return result ?? null;
 }
 
@@ -36,14 +36,21 @@ export async function writeFileBytes(path: string, bytes: ArrayBuffer): Promise<
   await invoke("write_file_bytes", { path, bytes: Array.from(new Uint8Array(bytes)) });
 }
 
-// Extracts a mod zip into the correct subfolder of installRoot based on
-// category (OpenWF/Metadata Patches or OpenWF/Scripts — see
-// docs/metadata-patching-guide.md and docs/pluto-scripting-guide.md in the
-// parent project). Returns the list of files actually extracted.
-export async function installModZip(zipBytes: ArrayBuffer, installRoot: string, category: string): Promise<string[]> {
+// Installs a single raw file (.pluto/.txt) directly into targetDir under
+// its own name. Returns the full path it was written to.
+export async function installModFile(bytes: ArrayBuffer, targetDir: string, fileName: string): Promise<string> {
+  return invoke<string>("install_mod_file", {
+    bytes: Array.from(new Uint8Array(bytes)),
+    targetDir,
+    fileName,
+  });
+}
+
+// Extracts a zip's contents into targetDir. Returns the list of files
+// actually extracted.
+export async function installModZip(zipBytes: ArrayBuffer, targetDir: string): Promise<string[]> {
   return invoke<string[]>("install_mod_zip", {
     zipBytes: Array.from(new Uint8Array(zipBytes)),
-    installRoot,
-    category,
+    targetDir,
   });
 }

@@ -9,24 +9,28 @@ CREATE TABLE IF NOT EXISTS modders (
 );
 
 CREATE TABLE IF NOT EXISTS mods (
-    id           TEXT PRIMARY KEY,        -- slug, e.g. "ultimate-database"
-    name         TEXT NOT NULL,
-    author       TEXT NOT NULL,
-    description  TEXT NOT NULL DEFAULT '',
-    category     TEXT NOT NULL CHECK (category IN ('metadata-patch', 'pluto-script', 'other')),
-    owner_id     TEXT NOT NULL REFERENCES modders(id),
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    id              TEXT PRIMARY KEY,        -- slug, e.g. "ultimate-database"
+    name            TEXT NOT NULL,
+    author          TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL CHECK (category IN ('metadata-patch', 'pluto-script', 'other')),
+    thumbnail_url   TEXT,                     -- external link only, never hosted here — see docs/architecture.md
+    screenshot_urls TEXT NOT NULL DEFAULT '[]', -- JSON array of external links, same reasoning
+    owner_id        TEXT NOT NULL REFERENCES modders(id),
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS mod_versions (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     mod_id             TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
     version            TEXT NOT NULL,           -- e.g. "1.2.0"
+    file_name          TEXT NOT NULL,           -- original uploaded filename, e.g. "Swarm.pluto" or "my-mod.zip"
     download_url       TEXT NOT NULL,           -- GitHub release asset's browser_download_url (public, direct)
     github_release_id  INTEGER NOT NULL,        -- needed to delete/replace the release later
     file_size          INTEGER NOT NULL,        -- bytes
-    checksum           TEXT NOT NULL,           -- sha256 of the zip, hex
+    checksum           TEXT NOT NULL,           -- sha256 of the file, hex
+    game_versions      TEXT NOT NULL DEFAULT '["all"]', -- JSON array of GAME_VERSIONS entries, or ["all"]
     changelog          TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (mod_id, version)

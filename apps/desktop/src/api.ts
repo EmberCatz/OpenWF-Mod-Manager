@@ -16,32 +16,47 @@ export async function fetchMod(id: string): Promise<ModWithVersions> {
   return res.json();
 }
 
-// Downloads a mod's zip straight from its GitHub release asset URL — this
-// never touches the Worker API. Uses the Tauri HTTP plugin rather than the
-// webview's fetch so it isn't subject to browser CORS restrictions against
-// GitHub's asset-hosting origin.
-export async function downloadModZip(downloadUrl: string): Promise<ArrayBuffer> {
+// Downloads a mod version's file (.pluto, .txt, or .zip) straight from its
+// GitHub release asset URL — this never touches the Worker API. Uses the
+// Tauri HTTP plugin rather than the webview's fetch so it isn't subject to
+// browser CORS restrictions against GitHub's asset-hosting origin.
+export async function downloadModFile(downloadUrl: string): Promise<ArrayBuffer> {
   const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
   const res = await tauriFetch(downloadUrl);
   if (!res.ok) throw new Error(`download failed: ${res.status}`);
   return res.arrayBuffer();
 }
 
-// Creates a new mod + its first version. Fails 409 if a mod with the same
-// (slugified) name already exists — this form doesn't cover adding a
-// version to an existing mod yet, see POST /api/mods/:id/versions.
-export async function uploadNewMod(metadata: UploadMetadata, zipBytes: Uint8Array, fileName: string, apiKey: string): Promise<{ id: string; downloadUrl: string }> {
+async function postMultipart(path: string, metadata: unknown, fileBytes: Uint8Array, fileName: string, apiKey: string) {
   const form = new FormData();
-  form.append("file", new Blob([zipBytes as BlobPart], { type: "application/zip" }), fileName);
+  form.append("file", new Blob([fileBytes as BlobPart], { type: "application/octet-stream" }), fileName);
   form.append("metadata", JSON.stringify(metadata));
 
   const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
-  const res = await tauriFetch(`${API_BASE_URL}/api/mods`, {
+  const res = await tauriFetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.error ?? `upload failed: ${res.status}`);
+  if (!res.ok) throw new Error(body.error ?? `request failed: ${res.status}`);
   return body;
+}
+
+// Creates a new mod + its first version. Fails 409 if a mod with the same
+// (slugified) name already exists — use addModVersion for that case.
+export async function uploadNewMod(metadata: UploadMetadata, fileBytes: Uint8Array, fileName: string, apiKey: string): Promise<{ id: string; downloadUrl: string }> {
+  return postMultipart("/api/mods", metadata, fileBytes, fileName, apiKey);
+}
+
+// Adds a new version to an existing mod. Fails 403 if apiKey doesn't
+// belong to that mod's owner, 409 if the version number already exists.
+export async function addModVersion(
+  modId: string,
+  metadata: Pick<UploadMetadata, "version" | "changelog" | "gameVersions">,
+  fileBytes: Uint8Array,
+  fileName: string,
+  apiKey: string
+): Promise<{ id: string; version: string; downloadUrl: string }> {
+  return postMultipart(`/api/mods/${modId}/versions`, metadata, fileBytes, fileName, apiKey);
 }
