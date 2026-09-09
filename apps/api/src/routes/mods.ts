@@ -230,3 +230,57 @@ mods.post("/:id/versions", async (c) => {
 
   return c.json({ id: modId, version: metadata.version, downloadUrl: asset.browserDownloadUrl }, 201);
 });
+
+// DELETE /api/mods/:id/versions/:version — remove a single version.
+// Only the mod's owner may delete. D1 row goes first so the API stops
+// advertising it immediately; the GitHub release delete is best-effort
+// after that — if it fails, the worst case is a harmless orphaned release
+// with nothing in the listing pointing at it.
+mods.delete("/:id/versions/:version", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const modId = c.req.param("id");
+  const version = c.req.param("version");
+
+  const modRow = await c.env.DB.prepare("SELECT owner_id FROM mods WHERE id = ?").bind(modId).first<{
+    owner_id: string;
+  }>();
+  if (!modRow) return c.json({ error: "not found" }, 404);
+  if (modRow.owner_id !== modder.id) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
+
+  const versionRow = await c.env.DB.prepare("SELECT github_release_id FROM mod_versions WHERE mod_id = ? AND version = ?")
+    .bind(modId, version)
+    .first<{ github_release_id: number }>();
+  if (!versionRow) return c.json({ error: "version not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM mod_versions WHERE mod_id = ? AND version = ?").bind(modId, version).run();
+  await deleteReleaseBestEffort(c.env, versionRow.github_release_id);
+
+  return c.body(null, 204);
+});
+
+// DELETE /api/mods/:id — remove a mod and every one of its versions.
+// mod_versions rows cascade-delete via the schema's ON DELETE CASCADE;
+// each version's GitHub release is then deleted best-effort.
+mods.delete("/:id", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const modId = c.req.param("id");
+  const modRow = await c.env.DB.prepare("SELECT owner_id FROM mods WHERE id = ?").bind(modId).first<{
+    owner_id: string;
+  }>();
+  if (!modRow) return c.json({ error: "not found" }, 404);
+  if (modRow.owner_id !== modder.id) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
+
+  const { results: versionRows } = await c.env.DB.prepare("SELECT github_release_id FROM mod_versions WHERE mod_id = ?")
+    .bind(modId)
+    .all<{ github_release_id: number }>();
+
+  await c.env.DB.prepare("DELETE FROM mods WHERE id = ?").bind(modId).run();
+
+  await Promise.all(versionRows.map((v) => deleteReleaseBestEffort(c.env, v.github_release_id)));
+
+  return c.body(null, 204);
+});
