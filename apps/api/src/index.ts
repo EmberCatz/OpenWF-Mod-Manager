@@ -14,4 +14,14 @@ app.get("/", (c) => c.json({ name: "openwf-mod-manager-api", status: "ok" }));
 
 app.route("/api/mods", mods);
 
+// Without this, an uncaught exception (e.g. the GitHub API call in
+// src/github.ts failing/rate-limiting) falls through to a plain-text
+// "Internal Server Error" instead of JSON — which crashes any client
+// that unconditionally does res.json() on the response, turning a
+// readable server error into a confusing JSON-parse error instead.
+app.onError((err, c) => {
+  console.error(err);
+  return c.json({ error: err.message || "internal error" }, 500);
+});
+
 export default app;

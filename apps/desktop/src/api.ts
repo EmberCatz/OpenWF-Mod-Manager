@@ -27,7 +27,7 @@ export async function downloadModFile(downloadUrl: string): Promise<ArrayBuffer>
   return res.arrayBuffer();
 }
 
-async function postMultipart(path: string, metadata: unknown, fileBytes: Uint8Array, fileName: string, apiKey: string) {
+async function postMultipart<T>(path: string, metadata: unknown, fileBytes: Uint8Array, fileName: string, apiKey: string): Promise<T> {
   const form = new FormData();
   form.append("file", new Blob([fileBytes as BlobPart], { type: "application/octet-stream" }), fileName);
   form.append("metadata", JSON.stringify(metadata));
@@ -38,9 +38,19 @@ async function postMultipart(path: string, metadata: unknown, fileBytes: Uint8Ar
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
-  const body = await res.json();
+  // The server always replies JSON on purpose (see index.ts's onError), but
+  // this stays defensive anyway — a non-JSON body (a Cloudflare edge error
+  // page, a network proxy, anything outside the Worker's own control)
+  // should surface as a readable error, not a confusing JSON-parse crash.
+  const rawBody = await res.text();
+  let body: { error?: string };
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    throw new Error(res.ok ? "unexpected non-JSON response" : `request failed: ${res.status} ${rawBody.slice(0, 200)}`);
+  }
   if (!res.ok) throw new Error(body.error ?? `request failed: ${res.status}`);
-  return body;
+  return body as T;
 }
 
 // Creates a new mod + its first version. Fails 409 if a mod with the same
