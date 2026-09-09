@@ -1,5 +1,5 @@
 import type { Mod, ModVersion } from "@openwf-mod-manager/shared";
-import { downloadModFile } from "./api";
+import { downloadModFile, recordDownload } from "./api";
 import { installModFile, installModZip, pickSaveLocation, uninstallFiles, writeFileBytes } from "./native";
 import { getMetadataPatchesPath, getScriptsPath } from "./settings";
 import { clearInstalled, getInstalled, setInstalled } from "./installed";
@@ -31,6 +31,7 @@ export async function installVersion(mod: Mod, version: ModVersion): Promise<str
   }
 
   const bytes = await downloadModFile(version.downloadUrl);
+  recordDownload(mod.id); // best-effort popularity counter, doesn't block install
   const installedFiles = version.fileName.toLowerCase().endsWith(".zip")
     ? await installModZip(bytes, targetFolder)
     : [await installModFile(bytes, targetFolder, version.fileName)];
@@ -53,6 +54,7 @@ export async function downloadVersion(version: ModVersion): Promise<string | nul
   const savePath = await pickSaveLocation(version.fileName);
   if (!savePath) return null;
   const bytes = await downloadModFile(version.downloadUrl);
+  recordDownload(version.modId); // best-effort popularity counter, doesn't block the save
   await writeFileBytes(savePath, bytes);
   return "Saved";
 }

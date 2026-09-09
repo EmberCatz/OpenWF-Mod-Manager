@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS mods (
     thumbnail_position TEXT NOT NULL DEFAULT '50% 50%', -- CSS object-position focal point, since the linked image can't be re-hosted/cropped
     screenshot_urls TEXT NOT NULL DEFAULT '[]', -- JSON array of external links, same reasoning
     tags            TEXT NOT NULL DEFAULT '[]', -- JSON array of free-form, user-defined tags (not validated against a fixed list)
+    download_count  INTEGER NOT NULL DEFAULT 0, -- incremented via POST /api/mods/:id/download — best-effort, not a precise audit trail
     owner_id        TEXT NOT NULL REFERENCES modders(id),
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -96,3 +97,19 @@ CREATE TABLE IF NOT EXISTS rate_limit_hits (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_lookup ON rate_limit_hits (bucket, key, created_at);
+
+-- Lightweight moderation: anyone can flag a mod or a comment (see
+-- routes/reports.ts). There's no in-app review queue/admin role yet — the
+-- operator checks these directly (see apps/api/package.json's
+-- "reports:list" script), so this table is intentionally just a mailbox,
+-- not a full moderation workflow.
+CREATE TABLE IF NOT EXISTS reports (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type TEXT NOT NULL CHECK (target_type IN ('mod', 'comment')),
+    target_id   TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved', 'dismissed')),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports (status, created_at);

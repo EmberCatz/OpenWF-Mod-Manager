@@ -1,4 +1,4 @@
-import type { Comment, ModWithVersions, ReviewSummary, UploadMetadata } from "@openwf-mod-manager/shared";
+import type { Comment, Mod, ModWithVersions, ReviewSummary, UpdateModMetadata, UploadMetadata } from "@openwf-mod-manager/shared";
 
 // Points at the deployed Worker (apps/api). Override for local dev with a
 // .env file (VITE_API_BASE_URL=http://127.0.0.1:8787) once wrangler dev is running.
@@ -174,4 +174,39 @@ export async function fetchMe(token: string): Promise<Account> {
 
 export async function deleteAccount(token: string): Promise<void> {
   return authedDelete("/api/auth/me", token);
+}
+
+// Best-effort popularity-counter ping — swallows its own errors so a slow
+// or unreachable API never interrupts an actual install/download, which
+// works entirely independently of this (see downloadModFile above).
+export async function recordDownload(modId: string): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/mods/${modId}/download`, { method: "POST" }).catch(() => {});
+}
+
+async function authedJson<T>(method: string, path: string, body: unknown, apiKey: string): Promise<T> {
+  const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
+  const res = await tauriFetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const rawBody = await res.text();
+  let parsed: { error?: string };
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    throw new Error(res.ok ? "unexpected non-JSON response" : `request failed: ${res.status} ${rawBody.slice(0, 200)}`);
+  }
+  if (!res.ok) throw new Error(parsed.error ?? `request failed: ${res.status}`);
+  return parsed as T;
+}
+
+// Updates the mod's own record (not a version/file) — owner-only. Only
+// the fields present in `patch` change; omit a key to leave it alone.
+export async function updateMod(modId: string, patch: UpdateModMetadata, apiKey: string): Promise<Mod> {
+  return authedJson("PATCH", `/api/mods/${modId}`, patch, apiKey);
+}
+
+export async function submitReport(targetType: "mod" | "comment", targetId: string, reason: string): Promise<void> {
+  await postJson("/api/reports", { targetType, targetId, reason });
 }

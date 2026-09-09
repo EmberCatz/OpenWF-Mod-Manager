@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Comment } from "@openwf-mod-manager/shared";
 import { fetchComments, postComment } from "../api";
 import { getCommenterName, setCommenterName } from "../settings";
+import ReportButton from "./ReportButton";
 
 // No account system exists in this project (see docs/architecture.md) —
 // commenting is open, and authorName is just remembered locally for
@@ -62,6 +63,7 @@ export default function CommentSection({ modId }: { modId: string }) {
                 <span className="muted">{new Date(c.createdAt).toLocaleString()}</span>
               </div>
               <p className="comment__body">{c.body}</p>
+              <ReportButton targetType="comment" targetId={String(c.id)} />
             </li>
           ))}
         </ul>

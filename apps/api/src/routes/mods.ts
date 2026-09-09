@@ -4,7 +4,7 @@ import { authenticate } from "../auth";
 import { checkRateLimit, clientIp } from "../rateLimit";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
-import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UploadMetadata } from "@openwf-mod-manager/shared";
+import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UpdateModMetadata, UploadMetadata } from "@openwf-mod-manager/shared";
 
 export const mods = new Hono<{ Bindings: Env }>();
 
@@ -30,6 +30,10 @@ const COMMENT_LIMIT = 10;
 const COMMENT_WINDOW_SECONDS = 10 * 60;
 const REVIEW_LIMIT = 20;
 const REVIEW_WINDOW_SECONDS = 10 * 60;
+// 60/10min/IP — generous; this is best-effort telemetry, not something
+// worth ever blocking a real install/download over.
+const DOWNLOAD_COUNT_LIMIT = 60;
+const DOWNLOAD_COUNT_WINDOW_SECONDS = 10 * 60;
 
 // Single-file mods (the common case) upload a raw .pluto/.txt directly —
 // no zip/extraction step. .zip is still accepted for mods that need more
@@ -151,6 +155,7 @@ function rowToMod(row: any): Mod {
     thumbnailPosition: row.thumbnail_position ?? "50% 50%",
     screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
     tags: JSON.parse(row.tags ?? "[]"),
+    downloadCount: row.download_count ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -250,6 +255,97 @@ mods.get("/:id", async (c) => {
     versions: versionRows.map((r: any) => rowToVersion(r)),
   };
   return c.json(result);
+});
+
+// PATCH /api/mods/:id — partial update of the mod's own record (name,
+// description, thumbnail, screenshots, tags). Owner-only. Only fields
+// present in the body are touched — the mod's id/slug never changes here
+// (it's derived once at creation and every version/GitHub release is tied
+// to it), and category/author aren't editable this way since category
+// drives install-folder routing for every existing installed file.
+mods.patch("/:id", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const modId = c.req.param("id");
+  const modRow = await c.env.DB.prepare("SELECT owner_id FROM mods WHERE id = ?").bind(modId).first<{
+    owner_id: string;
+  }>();
+  if (!modRow) return c.json({ error: "not found" }, 404);
+  if (modRow.owner_id !== modder.id) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
+
+  const body = await c.req.json<UpdateModMetadata>().catch(() => null);
+  if (!body) return c.json({ error: "invalid JSON body" }, 400);
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    if (!body.name.trim()) return c.json({ error: "name cannot be empty" }, 400);
+    sets.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.description !== undefined) {
+    sets.push("description = ?");
+    values.push(body.description);
+  }
+  if (body.thumbnailUrl !== undefined) {
+    if (body.thumbnailUrl === null || body.thumbnailUrl === "") {
+      sets.push("thumbnail_url = ?");
+      values.push(null);
+    } else if (isHttpUrl(body.thumbnailUrl)) {
+      sets.push("thumbnail_url = ?");
+      values.push(body.thumbnailUrl);
+    } else {
+      return c.json({ error: "thumbnailUrl must be an http(s) URL" }, 400);
+    }
+  }
+  if (body.thumbnailPosition !== undefined) {
+    const position = validateThumbnailPosition(body.thumbnailPosition);
+    if (!position) return c.json({ error: "thumbnailPosition must look like 'NN% NN%'" }, 400);
+    sets.push("thumbnail_position = ?");
+    values.push(position);
+  }
+  if (body.screenshotUrls !== undefined) {
+    const urls = validateScreenshotUrls(body.screenshotUrls);
+    if (!urls) return c.json({ error: `screenshotUrls must be an array of http(s) URLs, max ${MAX_SCREENSHOTS}` }, 400);
+    sets.push("screenshot_urls = ?");
+    values.push(JSON.stringify(urls));
+  }
+  if (body.tags !== undefined) {
+    const tags = validateTags(body.tags);
+    if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);
+    sets.push("tags = ?");
+    values.push(JSON.stringify(tags));
+  }
+
+  if (sets.length === 0) return c.json({ error: "no fields to update" }, 400);
+
+  sets.push("updated_at = ?");
+  values.push(new Date().toISOString());
+  values.push(modId);
+
+  await c.env.DB.prepare(`UPDATE mods SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  const updated = await c.env.DB.prepare("SELECT * FROM mods WHERE id = ?").bind(modId).first();
+  return c.json(rowToMod(updated));
+});
+
+// POST /api/mods/:id/download — fire-and-forget popularity counter. The
+// actual file bytes are always fetched directly from GitHub's asset URL
+// (see docs/architecture.md), never through the Worker — this just
+// records that it happened, so Browse/detail can show a download count.
+// Rate-limit failures no-op silently rather than erroring: this is
+// best-effort telemetry, never worth interrupting a real install over.
+mods.post("/:id/download", async (c) => {
+  const allowed = await checkRateLimit(c, "download_count", clientIp(c), DOWNLOAD_COUNT_LIMIT, DOWNLOAD_COUNT_WINDOW_SECONDS);
+  if (!allowed) return c.body(null, 204);
+
+  const modId = c.req.param("id");
+  await c.env.DB.prepare("UPDATE mods SET download_count = download_count + 1 WHERE id = ?").bind(modId).run();
+  return c.body(null, 204);
 });
 
 // POST /api/mods — create a new mod + its first version.

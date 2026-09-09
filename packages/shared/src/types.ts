@@ -13,6 +13,7 @@ export interface Mod {
   thumbnailPosition: string; // CSS object-position, e.g. "50% 50%" — lets the uploader pick a focal point since the linked image can't actually be cropped/re-hosted
   screenshotUrls: string[]; // external links only, same reasoning
   tags: string[]; // free-form, user-defined (Notion-style) — unlike gameVersions, not validated against a fixed list
+  downloadCount: number; // incremented via POST /api/mods/:id/download — best-effort, not a precise audit trail
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }
@@ -49,6 +50,19 @@ export interface UploadMetadata {
   thumbnailPosition?: string; // see Mod.thumbnailPosition — defaults to "50% 50%" server-side
   screenshotUrls?: string[]; // external links only — see Mod.screenshotUrls
   tags?: string[]; // free-form — see Mod.tags
+}
+
+// PATCH /api/mods/:id — partial update of a mod's own record (not its
+// versions/files, see UploadMetadata for that). Owner-only. A field only
+// changes if its key is present in the body — omit a key to leave it
+// alone. thumbnailUrl accepts null/"" to clear it.
+export interface UpdateModMetadata {
+  name?: string;
+  description?: string;
+  thumbnailUrl?: string | null;
+  thumbnailPosition?: string;
+  screenshotUrls?: string[];
+  tags?: string[];
 }
 
 export interface ApiError {

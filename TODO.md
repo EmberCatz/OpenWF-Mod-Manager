@@ -7,6 +7,19 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Download/popularity counters per mod — `POST /api/mods/:id/download`
+      pinged best-effort on install/save, shown in Browse and detail
+- [x] Lightweight report/moderation flow — a Report button on mods and
+      comments (`ReportButton.tsx`), landing in a `reports` table the
+      operator checks directly (`npm run reports:list` in apps/api). No
+      in-app review queue/admin role — intentionally just a mailbox, not
+      a full moderation workflow
+- [x] Editing a mod's own metadata after creation — name, description,
+      thumbnail (+position), screenshots, tags via `PATCH /api/mods/:id`,
+      owner-only, from a new Edit button in My Mods (`EditModForm.tsx`).
+      Category and the mod's id/slug stay fixed — id is baked into every
+      version and GitHub release, category drives which folder existing
+      installs already went into
 - [x] Rate limiting — login/signup (per IP), mod uploads (per account),
       comments/reviews (per IP), D1-backed since a `workers.dev` subdomain
       can't use Cloudflare's dashboard rate-limiting rules (`src/rateLimit.ts`)
@@ -58,13 +71,10 @@ testing) rather than letting them evaporate.
       rather than launched in dev mode
 
 ## Ideas, not committed to yet
-- [ ] Download/popularity counters per mod
-- [ ] Lightweight report/moderation flow for uploaded content
 - [ ] Auto-detect a likely Warframe install path instead of requiring manual
       folder selection in Settings
-- [ ] Editing an existing mod's own metadata (name/description/thumbnail/tags)
-      after creation — today only *adding a version* is supported, not
-      editing the mod record itself
+- [ ] An actual in-app review queue for reports, once there's more than one
+      operator or more than a handful of reports to justify it
 
 ## Known correctness gaps
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of

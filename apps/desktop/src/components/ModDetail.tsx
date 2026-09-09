@@ -10,6 +10,7 @@ import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
 import StarRating from "./StarRating";
 import FilePreview from "./FilePreview";
 import CommentSection from "./CommentSection";
+import ReportButton from "./ReportButton";
 
 interface ModDetailProps {
   modId: string;
@@ -30,6 +31,12 @@ function formatBytes(bytes: number): string {
 function formatGameVersions(tags: string[]): string {
   if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";
   return tags.join(", ");
+}
+
+function formatCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
 }
 
 export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) {
@@ -135,7 +142,9 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       {mod && (
         <>
           <h2 className="mod-detail__title">{mod.name}</h2>
-          <p className="muted">by {mod.author}</p>
+          <p className="muted">
+            by {mod.author} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
+          </p>
           <div className="review-summary">
             <StarRating value={reviewSummary?.myRating ?? reviewSummary?.average ?? 0} interactive onRate={handleRate} />
             <span className="muted">
@@ -145,6 +154,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
               {reviewSummary?.myRating != null && " — click to change your rating"}
             </span>
           </div>
+          <ReportButton targetType="mod" targetId={mod.id} />
           {mod.tags.length > 0 && (
             <div className="mod-card__tags">
               {mod.tags.map((t) => (

@@ -522,8 +522,15 @@ body {
 }
 
 .settings,
-.upload-form {
+.upload-form,
+.edit-mod-form {
   max-width: 480px;
+}
+
+.edit-mod-form {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
 
 .browse-search {
@@ -1177,4 +1184,44 @@ body {
 
 .account-form button {
   align-self: flex-start;
+}
+
+/* --- Report button/form --- */
+
+.report-button__toggle {
+  display: inline-block;
+  margin: 0.3rem 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.report-button__toggle:hover {
+  color: #ff8a8a;
+}
+
+.report-button__done {
+  font-size: 0.75rem;
+}
+
+.report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 360px;
+  margin-top: 0.4rem;
+}
+
+.report-form textarea {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.82rem;
+  font-family: inherit;
 }

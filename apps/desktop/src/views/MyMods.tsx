@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import type { ModWithVersions } from "@openwf-mod-manager/shared";
+import type { Mod, ModWithVersions } from "@openwf-mod-manager/shared";
 import { deleteMod, deleteModVersion, fetchMyMods } from "../api";
 import { getApiKey } from "../settings";
 import { TrashIcon } from "../icons";
+import EditModForm from "../components/EditModForm";
 
 // "Mine" resolves through whatever's in Settings — a self-service account
 // session or an older API key, both work the same way here (see
@@ -14,6 +15,7 @@ export default function MyMods() {
   const [error, setError] = useState<string | null>(null);
   const [confirmingModId, setConfirmingModId] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [editingModId, setEditingModId] = useState<string | null>(null);
 
   function load() {
     if (!apiKey) {
@@ -41,6 +43,11 @@ export default function MyMods() {
     } finally {
       setBusyKey(null);
     }
+  }
+
+  function handleSaved(updated: Mod) {
+    setMods((m) => m.map((mod) => (mod.id === updated.id ? { ...mod, ...updated } : mod)));
+    setEditingModId(null);
   }
 
   async function handleDeleteVersion(modId: string, version: string) {
@@ -87,18 +94,28 @@ export default function MyMods() {
               </li>
             ))}
           </ul>
-          {confirmingModId === mod.id ? (
-            <div className="field__row">
-              <span className="error">Delete '{mod.name}' and every version? This can't be undone.</span>
-              <button className="button button--danger" disabled={busyKey === mod.id} onClick={() => handleDeleteMod(mod.id)}>
-                Confirm delete
-              </button>
-              <button className="button" onClick={() => setConfirmingModId(null)}>Cancel</button>
-            </div>
+
+          {editingModId === mod.id ? (
+            <EditModForm mod={mod} apiKey={apiKey} onSaved={handleSaved} onCancel={() => setEditingModId(null)} />
           ) : (
-            <button className="button button--danger" onClick={() => setConfirmingModId(mod.id)}>
-              <TrashIcon className="btn-icon" /> Delete mod
-            </button>
+            <div className="field__row">
+              <button className="button" onClick={() => setEditingModId(mod.id)}>
+                Edit
+              </button>
+              {confirmingModId === mod.id ? (
+                <>
+                  <span className="error">Delete '{mod.name}' and every version? This can't be undone.</span>
+                  <button className="button button--danger" disabled={busyKey === mod.id} onClick={() => handleDeleteMod(mod.id)}>
+                    Confirm delete
+                  </button>
+                  <button className="button" onClick={() => setConfirmingModId(null)}>Cancel</button>
+                </>
+              ) : (
+                <button className="button button--danger" onClick={() => setConfirmingModId(mod.id)}>
+                  <TrashIcon className="btn-icon" /> Delete mod
+                </button>
+              )}
+            </div>
           )}
         </li>
       ))}

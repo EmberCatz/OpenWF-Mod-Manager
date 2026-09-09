@@ -34,6 +34,12 @@ function formatGameVersions(tags: string[]): string {
   return `${tags.slice(0, 3).join(", ")} +${tags.length - 3} more`;
 }
 
+function formatCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
 export default function Browse() {
   const [mods, setMods] = useState<ModWithVersions[]>([]);
   const [loading, setLoading] = useState(true);
@@ -256,6 +262,7 @@ export default function Browse() {
                       <span className="mod-card__author">by {mod.author}</span>
                       <div className="mod-card__grid-meta">
                         <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
+                        <span className="muted">{formatCount(mod.downloadCount)} DL</span>
                         {isUpToDate && (
                           <span className="badge badge--installed">
                             <CheckCircleIcon className="btn-icon" />
@@ -321,6 +328,7 @@ export default function Browse() {
                       <div className="mod-card__footer">
                         <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
                         {version && <span className="muted">{formatGameVersions(version.gameVersions)}</span>}
+                        <span className="muted">{formatCount(mod.downloadCount)} downloads</span>
                         {isUpToDate && (
                           <span className="badge badge--installed">
                             <CheckCircleIcon className="btn-icon" /> Installed
