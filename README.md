@@ -1,8 +1,9 @@
 # OpenWF Mod Manager
 
 A desktop mod manager for [OpenWF](https://about.openwf.io/) / SpaceNinjaServer:
-upload and browse/download mods (metadata patches, `.pluto` scripts, etc.)
-without manually shuffling zip files around.
+browse, install, update, and uninstall mods (metadata patches, `.pluto`
+scripts, etc.) instead of manually shuffling files from Discord links into
+the right folder.
 
 See [docs/architecture.md](docs/architecture.md) for the full design —
 stack choices, data flow, schema, API surface, and security notes.
@@ -15,14 +16,16 @@ stack choices, data flow, schema, API surface, and security notes.
 | [`apps/api/`](apps/api/) | The Cloudflare Worker API (Hono), backed by D1 + GitHub Releases. |
 | [`packages/shared/`](packages/shared/) | TypeScript types shared between the two, mirroring the D1 schema. |
 | [`docs/architecture.md`](docs/architecture.md) | Design doc: stack, data flow, schema, API routes, security follow-ups. |
+| [`TODO.md`](TODO.md) | Tracked list of planned/considered work. |
 
 For the mod *content* itself (the actual OpenWF metadata-patch DSL and
-`.pluto` scripting conventions this manager will ship), see the docs in
-the parent [`OPENWF _ Modding/docs/`](../docs/) folder.
+`.pluto` scripting conventions this manager ships), see the docs in the
+parent [`OPENWF _ Modding/docs/`](../docs/) folder.
 
 ## Status
 
-Scaffolded, not yet run — see "Known gaps" at the bottom of
-[docs/architecture.md](docs/architecture.md#known-gaps-in-this-scaffold)
-for exactly what's left before `npm run dev:api` / `npm run dev:desktop`
-work end to end.
+Live and working: the API is deployed, mods can be uploaded/browsed/
+installed/uninstalled/updated end to end. See [`TODO.md`](TODO.md) for
+what's next. To run the desktop app locally: `npm install`, then
+`npm run dev:desktop` (requires Rust — see
+[docs/architecture.md § Local dev](docs/architecture.md#local-dev)).

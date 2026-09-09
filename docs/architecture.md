@@ -251,18 +251,21 @@ npm run dev:api                                # wrangler dev, http://127.0.0.1:
 npm run dev:desktop
 ```
 
+## Installed-state tracking (desktop app)
+
+`apps/desktop/src/installed.ts` tracks, purely in `localStorage`, which
+mod+version is currently installed and the exact absolute file paths its
+install wrote — not derived from Settings at read time, so changing the
+install-folder settings later doesn't retroactively confuse what's
+already on disk. `modActions.ts` is the shared install/uninstall/download
+logic used by both `Browse.tsx` and `components/ModDetail.tsx`, so the
+two views can't drift out of sync with each other. Switching a mod from
+one installed version to another removes the old version's files first
+(same tracked-paths mechanism uninstall uses), so upgrading doesn't leave
+stale files from the previous version behind.
+
 ## Known gaps
 
-- Issuing a new API key still requires running `apps/api/scripts/create-modder.mjs`
-  and applying the printed `wrangler d1 execute` commands by hand — no
-  self-service signup route (deliberately, per the auth notes above).
-- `apps/desktop/src-tauri/icons/` currently holds a flat placeholder color,
-  not a real logo — see the README in that folder.
-- No "installed version" tracking in the app yet — Browse always shows
-  "Install"/"Download", never "Installed"/"Update available", even for a
-  mod already placed on disk.
-- Rate limiting on the upload endpoints (see Security notes above).
-- The game-versions list (`packages/shared/src/gameVersions.ts`) is a
-  point-in-time scrape of about.openwf.io — it won't pick up new patches
-  released after it was generated until someone re-scrapes and
-  regenerates the file.
+See [`TODO.md`](../TODO.md) at the repo root for the tracked list of
+planned/considered work — kept there instead of duplicated here so there's
+one place to check, not two that can drift out of sync.

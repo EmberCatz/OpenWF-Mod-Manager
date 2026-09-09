@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ModWithVersions } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
-import { fetchModList, downloadModFile } from "../api";
-import { installModFile, installModZip, pickSaveLocation, writeFileBytes } from "../native";
-import { getMetadataPatchesPath, getScriptsPath } from "../settings";
+import { fetchModList } from "../api";
+import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from "../modActions";
+import { getInstalled } from "../installed";
+import ModDetail from "../components/ModDetail";
 
 type ActionState = { status: "idle" | "working" | "done" | "error"; message?: string };
 
@@ -12,12 +13,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   "pluto-script": "Pluto Script",
   other: "Other",
 };
-
-function targetFolderFor(category: string): string | null {
-  if (category === "metadata-patch") return getMetadataPatchesPath();
-  if (category === "pluto-script") return getScriptsPath();
-  return null;
-}
 
 function formatGameVersions(tags: string[]): string {
   if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";
@@ -31,6 +26,11 @@ export default function Browse() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [openModId, setOpenModId] = useState<string | null>(null);
+  // Bumped after every install/uninstall so installed-state badges re-read
+  // localStorage instead of going stale after an action.
+  const [installedVersion, setInstalledVersion] = useState(0);
 
   useEffect(() => {
     fetchModList()
@@ -42,23 +42,11 @@ export default function Browse() {
   async function handleInstall(mod: ModWithVersions) {
     const version = mod.versions[0];
     if (!version) return;
-
-    const targetFolder = targetFolderFor(mod.category);
-    if (!targetFolder) {
-      setActions((s) => ({ ...s, [mod.id]: { status: "error", message: "Set the matching folder in Settings first" } }));
-      return;
-    }
-
     setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
     try {
-      const bytes = await downloadModFile(version.downloadUrl);
-      if (version.fileName.toLowerCase().endsWith(".zip")) {
-        const extracted = await installModZip(bytes, targetFolder);
-        setActions((s) => ({ ...s, [mod.id]: { status: "done", message: `Installed ${extracted.length} file(s)` } }));
-      } else {
-        await installModFile(bytes, targetFolder, version.fileName);
-        setActions((s) => ({ ...s, [mod.id]: { status: "done", message: "Installed" } }));
-      }
+      const message = await installVersion(mod, version);
+      setActions((s) => ({ ...s, [mod.id]: { status: "done", message } }));
+      setInstalledVersion((v) => v + 1);
     } catch (e) {
       setActions((s) => ({ ...s, [mod.id]: { status: "error", message: String(e) } }));
     }
@@ -67,20 +55,34 @@ export default function Browse() {
   async function handleDownload(mod: ModWithVersions) {
     const version = mod.versions[0];
     if (!version) return;
-
     setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
     try {
-      const savePath = await pickSaveLocation(version.fileName);
-      if (!savePath) {
-        setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
-        return;
-      }
-      const bytes = await downloadModFile(version.downloadUrl);
-      await writeFileBytes(savePath, bytes);
-      setActions((s) => ({ ...s, [mod.id]: { status: "done", message: "Saved" } }));
+      const message = await downloadVersion(version);
+      setActions((s) => ({ ...s, [mod.id]: message ? { status: "done", message } : { status: "idle" } }));
     } catch (e) {
       setActions((s) => ({ ...s, [mod.id]: { status: "error", message: String(e) } }));
     }
+  }
+
+  async function handleUninstall(mod: ModWithVersions) {
+    setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
+    try {
+      await uninstallMod(mod.id);
+      setActions((s) => ({ ...s, [mod.id]: { status: "done", message: "Uninstalled" } }));
+      setInstalledVersion((v) => v + 1);
+    } catch (e) {
+      setActions((s) => ({ ...s, [mod.id]: { status: "error", message: String(e) } }));
+    }
+  }
+
+  if (openModId) {
+    return (
+      <ModDetail
+        modId={openModId}
+        onBack={() => setOpenModId(null)}
+        onChanged={() => setInstalledVersion((v) => v + 1)}
+      />
+    );
   }
 
   if (loading) return <p><span className="spinner" /> Loading mods…</p>;
@@ -88,10 +90,22 @@ export default function Browse() {
   if (mods.length === 0) return <p className="muted fade-in">No mods yet — check back soon.</p>;
 
   const allTags = [...new Set(mods.flatMap((m) => m.tags))].sort();
-  const visibleMods = activeTag ? mods.filter((m) => m.tags.includes(activeTag)) : mods;
+  const query = search.trim().toLowerCase();
+  const visibleMods = mods.filter((m) => {
+    if (activeTag && !m.tags.includes(activeTag)) return false;
+    if (query && !`${m.name} ${m.description} ${m.author}`.toLowerCase().includes(query)) return false;
+    return true;
+  });
 
   return (
     <>
+      <input
+        type="text"
+        className="version-picker__search browse-search"
+        placeholder="Search mods…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
       {allTags.length > 0 && (
         <div className="tag-filter">
           {allTags.map((t) => (
@@ -106,13 +120,18 @@ export default function Browse() {
         </div>
       )}
       {visibleMods.length === 0 ? (
-        <p className="muted fade-in">No mods tagged "{activeTag}".</p>
+        <p className="muted fade-in">No mods match.</p>
       ) : (
         <ul className="mod-list">
           {visibleMods.map((mod, i) => {
             const version = mod.versions[0];
             const action = actions[mod.id] ?? { status: "idle" };
-            const canAutoInstall = mod.category === "metadata-patch" || mod.category === "pluto-script";
+            const autoInstallable = canAutoInstall(mod.category);
+            // installedVersion isn't read here directly, but bumping it via
+            // setInstalledVersion() after install/uninstall still triggers
+            // this component to re-render, which re-reads localStorage below.
+            const installedEntry = getInstalled(mod.id);
+            const isUpToDate = !!installedEntry && !!version && installedEntry.version === version.version;
 
             return (
               <li key={mod.id} className="mod-card fade-in" style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}>
@@ -120,7 +139,9 @@ export default function Browse() {
                   {mod.thumbnailUrl && <img className="mod-card__thumb" src={mod.thumbnailUrl} alt="" />}
                   <div className="mod-card__main">
                     <div className="mod-card__header">
-                      <span className="mod-card__name">{mod.name}</span>
+                      <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
+                        {mod.name}
+                      </button>
                       <span className="mod-card__author">by {mod.author}</span>
                     </div>
                     <p className="mod-card__description">{mod.description}</p>
@@ -137,14 +158,28 @@ export default function Browse() {
                       <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
                       <span className="mod-card__version">{version ? `v${version.version}` : "no versions yet"}</span>
                       {version && <span className="muted">{formatGameVersions(version.gameVersions)}</span>}
+                      {isUpToDate && <span className="badge badge--installed">Installed</span>}
                       {version && (
                         <button
                           className="button"
                           disabled={action.status === "working"}
-                          onClick={() => (canAutoInstall ? handleInstall(mod) : handleDownload(mod))}
+                          onClick={() => (autoInstallable ? handleInstall(mod) : handleDownload(mod))}
                         >
                           {action.status === "working" && <span className="spinner" />}
-                          {action.status === "working" ? "Working…" : canAutoInstall ? "Install" : "Download"}
+                          {action.status === "working"
+                            ? "Working…"
+                            : autoInstallable
+                              ? isUpToDate
+                                ? "Reinstall"
+                                : installedEntry
+                                  ? "Update"
+                                  : "Install"
+                              : "Download"}
+                        </button>
+                      )}
+                      {autoInstallable && installedEntry && (
+                        <button className="button" disabled={action.status === "working"} onClick={() => handleUninstall(mod)}>
+                          Uninstall
                         </button>
                       )}
                       {action.message && (

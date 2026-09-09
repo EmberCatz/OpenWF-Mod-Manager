@@ -75,8 +75,32 @@ pub fn install_mod_zip(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<Str
         let mut out_file = fs::File::create(&dest_path).map_err(|e| format!("failed to create '{}': {e}", dest_path.display()))?;
         std::io::copy(&mut entry, &mut out_file).map_err(|e| format!("failed to write '{}': {e}", dest_path.display()))?;
 
-        extracted.push(relative_path.display().to_string());
+        // Absolute path, not just the relative in-zip path — the frontend
+        // stores this list verbatim to know what to delete on uninstall,
+        // without needing to remember which target_dir it came from.
+        extracted.push(dest_path.display().to_string());
     }
 
     Ok(extracted)
+}
+
+// Deletes a set of previously-installed files (paths as returned by
+// install_mod_file / install_mod_zip). Missing files are treated as
+// already-uninstalled, not an error — only real failures (permissions,
+// a path that's actually a directory, etc.) are collected and reported.
+#[tauri::command]
+pub fn uninstall_files(paths: Vec<String>) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for path in paths {
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => errors.push(format!("'{path}': {e}")),
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }

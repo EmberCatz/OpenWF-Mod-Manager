@@ -46,11 +46,17 @@ export async function installModFile(bytes: ArrayBuffer, targetDir: string, file
   });
 }
 
-// Extracts a zip's contents into targetDir. Returns the list of files
-// actually extracted.
+// Extracts a zip's contents into targetDir. Returns the absolute path of
+// every file actually extracted (used to track what to remove on uninstall).
 export async function installModZip(zipBytes: ArrayBuffer, targetDir: string): Promise<string[]> {
   return invoke<string[]>("install_mod_zip", {
     zipBytes: Array.from(new Uint8Array(zipBytes)),
     targetDir,
   });
+}
+
+// Deletes previously-installed files (paths as returned by installModFile /
+// installModZip). Missing files are treated as already-gone, not an error.
+export async function uninstallFiles(paths: string[]): Promise<void> {
+  await invoke("uninstall_files", { paths });
 }
