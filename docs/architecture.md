@@ -251,11 +251,16 @@ after the GitHub side already succeeded) delete the orphaned release.
 - **Zip-slip protection is implemented** in the desktop app's install
   command (see "Install flow" above) — extraction can't write outside the
   chosen install root.
-- **Not yet implemented, do before any public upload endpoint goes live:**
-  - Rate limiting on `POST /api/mods*` (Cloudflare has a free rate-limiting
-    rule at the zone level, or a KV/D1-backed counter in the Worker) — the
-    residual abuse surface with a leaked key is GitHub API rate limits and
-    repo clutter, not money, but still worth throttling.
+- **Rate limiting is implemented** (`src/rateLimit.ts`), D1-backed rather
+  than Cloudflare's dashboard Rate Limiting Rules — those are a zone/WAF
+  product and don't apply to a bare `workers.dev` subdomain without a
+  custom domain in front of it. Covers `POST /api/auth/signup` and
+  `/login` (per IP — the actual brute-force/mass-account-creation
+  surface), `POST /api/mods*` (per authenticated modder), and the
+  anonymous `POST /api/mods/:id/comments` and `/reviews` (per IP). Not
+  built for a real distributed attack — this project's threat model is
+  "a bored person with a script," not a botnet.
+- **Not yet implemented:**
   - File content validation server-side — right now any file with an
     allowed extension under the size cap is accepted as-is.
 - CORS is currently wide open (`app.use("*", cors())`) since there's no

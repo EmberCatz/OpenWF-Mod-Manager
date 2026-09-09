@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { authenticate } from "../auth";
+import { checkRateLimit, clientIp } from "../rateLimit";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
 import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UploadMetadata } from "@openwf-mod-manager/shared";
@@ -18,6 +19,17 @@ const MAX_TAG_LENGTH = 30;
 const MAX_COMMENT_BODY_LENGTH = 2000;
 const MAX_AUTHOR_NAME_LENGTH = 40;
 const MAX_COMMENTS_LISTED = 200;
+
+// 20 uploads/hour/modder — generous for legitimate iteration (pushing a
+// few versions while testing), tight enough to cap a runaway script.
+const UPLOAD_LIMIT = 20;
+const UPLOAD_WINDOW_SECONDS = 60 * 60;
+// 10 comments/10min/IP and 20 ratings/10min/IP — both anonymous, so IP is
+// the only signal available; loose enough for genuine use.
+const COMMENT_LIMIT = 10;
+const COMMENT_WINDOW_SECONDS = 10 * 60;
+const REVIEW_LIMIT = 20;
+const REVIEW_WINDOW_SECONDS = 10 * 60;
 
 // Single-file mods (the common case) upload a raw .pluto/.txt directly —
 // no zip/extraction step. .zip is still accepted for mods that need more
@@ -250,6 +262,9 @@ mods.post("/", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
 
+  const allowed = await checkRateLimit(c, "mod_upload", modder.id, UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many uploads from this account — wait a bit and try again" }, 429);
+
   const form = await c.req.parseBody();
   const file = form["file"];
   const metadataRaw = form["metadata"];
@@ -356,6 +371,9 @@ mods.post("/", async (c) => {
 mods.post("/:id/versions", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const allowed = await checkRateLimit(c, "mod_upload", modder.id, UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many uploads from this account — wait a bit and try again" }, 429);
 
   const modId = c.req.param("id");
   const modRow = await c.env.DB.prepare("SELECT owner_id FROM mods WHERE id = ?").bind(modId).first<{
@@ -508,6 +526,9 @@ mods.get("/:id/comments", async (c) => {
 // same billing-risk reasoning as the rest of this API: worst case is text
 // spam, not money — see docs/architecture.md § Security & billing-risk notes.
 mods.post("/:id/comments", async (c) => {
+  const allowed = await checkRateLimit(c, "comment", clientIp(c), COMMENT_LIMIT, COMMENT_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many comments from this connection — wait a bit and try again" }, 429);
+
   const modId = c.req.param("id");
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (!mod) return c.json({ error: "not found" }, 404);
@@ -561,6 +582,9 @@ mods.get("/:id/reviews", async (c) => {
 // same mod again from the same install updates the existing row instead of
 // adding a duplicate (see the reviews table's PRIMARY KEY in schema.sql).
 mods.post("/:id/reviews", async (c) => {
+  const allowed = await checkRateLimit(c, "review", clientIp(c), REVIEW_LIMIT, REVIEW_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many ratings from this connection — wait a bit and try again" }, 429);
+
   const modId = c.req.param("id");
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (!mod) return c.json({ error: "not found" }, 404);

@@ -81,3 +81,18 @@ CREATE TABLE IF NOT EXISTS reviews (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (mod_id, reviewer_id)
 );
+
+-- Backs the D1-based rate limiter (src/rateLimit.ts) — a workers.dev
+-- subdomain can't use Cloudflare's dashboard-level Rate Limiting Rules
+-- (those need a zone/custom domain), so this is a plain counter table
+-- instead. `bucket` scopes it per endpoint ("login", "signup",
+-- "mod_upload"), `key` is whatever identifies the caller for that bucket
+-- (client IP for anonymous endpoints, modder id for authenticated ones).
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    bucket     TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_lookup ON rate_limit_hits (bucket, key, created_at);

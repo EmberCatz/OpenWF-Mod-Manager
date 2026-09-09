@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { authenticate, hashToken } from "../auth";
 import { hashPassword, verifyPassword } from "../passwords";
+import { checkRateLimit, clientIp } from "../rateLimit";
 
 export const auth = new Hono<{ Bindings: Env }>();
 
@@ -30,7 +31,20 @@ async function createSession(env: Env, modderId: string): Promise<string> {
 // POST /api/auth/signup — { username, password }. Creates the account and
 // immediately logs it in (same as login would). No email is collected —
 // this is the whole account, on purpose (see docs/architecture.md).
+// 5 signups/hour/IP — generous for a real person, tight enough to make
+// mass account creation tedious rather than free.
+const SIGNUP_LIMIT = 5;
+const SIGNUP_WINDOW_SECONDS = 60 * 60;
+
+// 8 attempts/5min/IP — a real person mistyping a password a few times
+// never hits this; a script guessing passwords does.
+const LOGIN_LIMIT = 8;
+const LOGIN_WINDOW_SECONDS = 5 * 60;
+
 auth.post("/signup", async (c) => {
+  const allowed = await checkRateLimit(c, "signup", clientIp(c), SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many accounts created from this connection — try again later" }, 429);
+
   const body = await c.req.json<{ username?: string; password?: string }>().catch(() => null);
   const username = body?.username?.trim();
   const password = body?.password;
@@ -57,6 +71,9 @@ auth.post("/signup", async (c) => {
 
 // POST /api/auth/login — { username, password }.
 auth.post("/login", async (c) => {
+  const allowed = await checkRateLimit(c, "login", clientIp(c), LOGIN_LIMIT, LOGIN_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many login attempts — wait a few minutes and try again" }, 429);
+
   const body = await c.req.json<{ username?: string; password?: string }>().catch(() => null);
   const username = body?.username?.trim();
   const password = body?.password;

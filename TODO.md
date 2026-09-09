@@ -7,6 +7,9 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Rate limiting — login/signup (per IP), mod uploads (per account),
+      comments/reviews (per IP), D1-backed since a `workers.dev` subdomain
+      can't use Cloudflare's dashboard rate-limiting rules (`src/rateLimit.ts`)
 - [x] Self-service accounts — username/password signup and login in
       Settings, replacing manually-issued API keys as the normal path
       (`routes/auth.ts`, `sessions` table). Old keys still work side by
@@ -49,9 +52,6 @@ testing) rather than letting them evaporate.
 - [x] Search across name/description/author, on top of the existing tag filter
 
 ## Up next
-- [ ] Rate limiting on upload endpoints (`POST /api/mods*`) — flagged since
-      the earliest security pass, still open. See
-      `docs/architecture.md` § Security & billing-risk notes.
 - [ ] Real app icon — placeholder flat-color square right now
       (`apps/desktop/src-tauri/icons/`)
 - [ ] Tauri auto-updater, once builds are actually distributed as installers
