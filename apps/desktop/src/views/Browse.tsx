@@ -8,6 +8,7 @@ import { CheckCircleIcon, GridIcon, ListIcon, RefreshIcon, TrashIcon } from "../
 import ModDetail from "../components/ModDetail";
 import SplitButton from "../components/SplitButton";
 import ClampedText from "../components/ClampedText";
+import defaultThumbnail from "../assets/thumbnails/default-thumbnail.jpg";
 
 type ActionState = { status: "idle" | "working" | "done" | "error"; message?: string };
 type ViewMode = "list" | "grid";
@@ -21,16 +22,11 @@ const CATEGORY_LABELS: Record<string, string> = {
 const CATEGORIES = Object.keys(CATEGORY_LABELS);
 const VIEW_MODE_KEY = "owmm.browseViewMode";
 
-// Placeholder shown in grid view when a mod has no thumbnailUrl, so every
-// card gets the same picture-above-title layout. This app only ever links
-// to externally-hosted images (never hosts them itself — see
-// docs/architecture.md), so swap this for a real hosted URL once picked;
-// until then this keeps grid view visually consistent on its own.
-const DEFAULT_THUMBNAIL_URL =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='240'><rect width='100%' height='100%' fill='#262a34'/><text x='50%' y='50%' font-family='sans-serif' font-size='22' fill='#5b8cff' text-anchor='middle' dominant-baseline='middle'>OpenWF</text></svg>`
-  );
+// Shown in grid view when a mod has no thumbnailUrl, so every card gets
+// the same picture-above-title layout. Bundled with the app itself (see
+// src/assets/README.md) — distinct from mod thumbnails, which stay
+// external-link-only (see docs/architecture.md).
+const DEFAULT_THUMBNAIL_URL = defaultThumbnail;
 
 function formatGameVersions(tags: string[]): string {
   if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";

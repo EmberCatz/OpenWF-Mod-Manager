@@ -68,7 +68,3 @@ testing) rather than letting them evaporate.
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of
       about.openwf.io/versions — won't pick up new patches until someone
       re-scrapes and regenerates the file
-- [ ] Grid view's default thumbnail (`Browse.tsx`'s `DEFAULT_THUMBNAIL_URL`)
-      is a placeholder SVG — swap in the real fallback image once it has a
-      URL (this app only links to externally-hosted images, see
-      docs/architecture.md, so it just needs a link, not a file)
