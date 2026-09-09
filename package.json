@@ -1,0 +1,16 @@
+{
+  "name": "openwf-mod-manager",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:desktop": "npm run tauri dev --workspace apps/desktop",
+    "build:desktop": "npm run tauri build --workspace apps/desktop",
+    "dev:api": "npm run dev --workspace apps/api",
+    "deploy:api": "npm run deploy --workspace apps/api",
+    "db:init": "npm run db:init --workspace apps/api"
+  }
+}

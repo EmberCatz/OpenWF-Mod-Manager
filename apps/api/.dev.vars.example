@@ -1,0 +1,4 @@
+# Copy to .dev.vars (gitignored) for local `wrangler dev`.
+# In production, set the real value with: wrangler secret put UPLOAD_API_KEY_SALT
+
+UPLOAD_API_KEY_SALT=change-me-to-a-long-random-string
