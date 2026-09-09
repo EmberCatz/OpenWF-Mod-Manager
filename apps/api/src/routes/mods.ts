@@ -184,6 +184,9 @@ mods.post("/", async (c) => {
   if (!(file instanceof File) || typeof metadataRaw !== "string") {
     return c.json({ error: "expected multipart fields 'file' and 'metadata'" }, 400);
   }
+  if (file.size === 0) {
+    return c.json({ error: "uploaded file is empty (0 bytes)" }, 400);
+  }
   if (file.size > MAX_FILE_BYTES) {
     return c.json({ error: `file exceeds ${MAX_FILE_BYTES} byte limit` }, 413);
   }
@@ -289,6 +292,9 @@ mods.post("/:id/versions", async (c) => {
   const metadataRaw = form["metadata"];
   if (!(file instanceof File) || typeof metadataRaw !== "string") {
     return c.json({ error: "expected multipart fields 'file' and 'metadata'" }, 400);
+  }
+  if (file.size === 0) {
+    return c.json({ error: "uploaded file is empty (0 bytes)" }, 400);
   }
   if (file.size > MAX_FILE_BYTES) {
     return c.json({ error: `file exceeds ${MAX_FILE_BYTES} byte limit` }, 413);

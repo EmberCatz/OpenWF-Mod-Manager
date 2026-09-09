@@ -164,6 +164,10 @@ export default function Upload() {
     setStatus({ kind: "working" });
     try {
       const bytes = await readFileBytes(filePath);
+      if (bytes.length === 0) {
+        setStatus({ kind: "error", message: `'${filePath}' is empty (0 bytes) — pick a different file` });
+        return;
+      }
       const fileName = filePath.split(/[\\/]/).pop() ?? "mod";
 
       if (mode === "new") {
