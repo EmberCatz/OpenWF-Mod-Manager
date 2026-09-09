@@ -147,6 +147,7 @@ export async function postReview(modId: string, reviewerId: string, rating: numb
 export interface Account {
   id: string;
   username: string;
+  isAdmin?: boolean;
 }
 
 export async function signup(username: string, password: string): Promise<{ token: string; username: string }> {
@@ -209,4 +210,74 @@ export async function updateMod(modId: string, patch: UpdateModMetadata, apiKey:
 
 export async function submitReport(targetType: "mod" | "comment", targetId: string, reason: string): Promise<void> {
   await postJson("/api/reports", { targetType, targetId, reason });
+}
+
+// ---- Admin (routes/admin.ts) — every function here 403s unless the
+// account behind apiKey has is_admin set, which is never settable through
+// any route (only apps/api/scripts/grant-admin.mjs, run by the operator).
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  createdAt: string;
+  isAdmin: boolean;
+  isBanned: boolean;
+  modCount: number;
+}
+
+export interface AdminReport {
+  id: number;
+  targetType: "mod" | "comment";
+  targetId: string;
+  reason: string;
+  status: "open" | "resolved" | "dismissed";
+  createdAt: string;
+}
+
+async function authedGet<T>(path: string, apiKey: string): Promise<T> {
+  const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
+  const res = await tauriFetch(`${API_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  const rawBody = await res.text();
+  let parsed: { error?: string };
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    throw new Error(res.ok ? "unexpected non-JSON response" : `request failed: ${res.status} ${rawBody.slice(0, 200)}`);
+  }
+  if (!res.ok) throw new Error(parsed.error ?? `request failed: ${res.status}`);
+  return parsed as T;
+}
+
+export async function fetchAdminUsers(apiKey: string): Promise<AdminUser[]> {
+  return authedGet("/api/admin/users", apiKey);
+}
+
+export async function banUser(userId: string, apiKey: string): Promise<void> {
+  await authedJson("POST", `/api/admin/users/${userId}/ban`, {}, apiKey);
+}
+
+export async function unbanUser(userId: string, apiKey: string): Promise<void> {
+  await authedJson("POST", `/api/admin/users/${userId}/unban`, {}, apiKey);
+}
+
+export async function deleteUserAdmin(userId: string, apiKey: string): Promise<void> {
+  return authedDelete(`/api/admin/users/${userId}`, apiKey);
+}
+
+export async function fetchAdminReports(status: "open" | "resolved" | "dismissed" | "all", apiKey: string): Promise<AdminReport[]> {
+  return authedGet(`/api/admin/reports?status=${status}`, apiKey);
+}
+
+export async function resolveReport(reportId: number, apiKey: string): Promise<void> {
+  await authedJson("POST", `/api/admin/reports/${reportId}/resolve`, {}, apiKey);
+}
+
+export async function dismissReport(reportId: number, apiKey: string): Promise<void> {
+  await authedJson("POST", `/api/admin/reports/${reportId}/dismiss`, {}, apiKey);
+}
+
+export async function deleteCommentAdmin(modId: string, commentId: number, apiKey: string): Promise<void> {
+  return authedDelete(`/api/mods/${modId}/comments/${commentId}`, apiKey);
 }

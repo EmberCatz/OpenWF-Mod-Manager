@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { pickFolder } from "../native";
 import {
   getApiKey,
@@ -8,7 +8,8 @@ import {
   setMetadataPatchesPath,
   setScriptsPath,
 } from "../settings";
-import { deleteAccount, fetchMe, login, logout, signup, type Account } from "../api";
+import { deleteAccount, login, logout, signup } from "../api";
+import { useAccount } from "../useAccount";
 import { TrashIcon } from "../icons";
 
 type AuthMode = "login" | "signup";
@@ -27,25 +28,12 @@ export default function Settings() {
   const [scriptsPath, setScriptsPathState] = useState(getScriptsPath() ?? "");
   const [saved, setSaved] = useState(false);
 
-  const [account, setAccount] = useState<Account | null>(null);
-  const [accountLoading, setAccountLoading] = useState(true);
+  const { account, accountLoading, refreshAccount, setAccount } = useAccount();
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authStatus, setAuthStatus] = useState<AuthStatus>({ kind: "idle" });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-
-  useEffect(() => {
-    const token = getApiKey();
-    if (!token) {
-      setAccountLoading(false);
-      return;
-    }
-    fetchMe(token)
-      .then(setAccount)
-      .catch(() => {}) // stale/invalid token — just show the login form again
-      .finally(() => setAccountLoading(false));
-  }, []);
 
   async function browse(title: string, setter: (v: string) => void) {
     const picked = await pickFolder(title);
@@ -64,7 +52,7 @@ export default function Settings() {
     try {
       const result = authMode === "signup" ? await signup(authUsername, authPassword) : await login(authUsername, authPassword);
       setApiKey(result.token);
-      setAccount({ id: "", username: result.username });
+      await refreshAccount();
       setAuthPassword("");
       setAuthStatus({ kind: "idle" });
     } catch (e) {

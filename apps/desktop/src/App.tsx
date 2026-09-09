@@ -2,25 +2,34 @@ import { useState } from "react";
 import Browse from "./views/Browse";
 import Upload from "./views/Upload";
 import MyMods from "./views/MyMods";
+import Admin from "./views/Admin";
 import Settings from "./views/Settings";
+import { useAccount } from "./useAccount";
 
-const TABS = [
+const ALL_TABS = [
   { id: "browse", label: "Browse", view: Browse },
   { id: "upload", label: "Upload", view: Upload },
   { id: "my-mods", label: "My Mods", view: MyMods },
+  { id: "admin", label: "Admin", view: Admin },
   { id: "settings", label: "Settings", view: Settings },
 ] as const;
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]["id"]>("browse");
-  const ActiveView = TABS.find((t) => t.id === activeTab)!.view;
+  const { account } = useAccount();
+  const [activeTab, setActiveTab] = useState<(typeof ALL_TABS)[number]["id"]>("browse");
+
+  // The Admin tab only exists for accounts with is_admin set (see
+  // apps/api/scripts/grant-admin.mjs) — filtered here rather than in every
+  // route, so a non-admin never even sees it in the nav.
+  const tabs = ALL_TABS.filter((tab) => tab.id !== "admin" || account?.isAdmin);
+  const ActiveView = (tabs.find((t) => t.id === activeTab) ?? tabs[0]).view;
 
   return (
     <main className="app">
       <h1>OpenWF Mod Manager</h1>
 
       <nav className="tabs">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             className={`tab ${activeTab === tab.id ? "tab--active" : ""}`}

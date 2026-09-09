@@ -81,15 +81,16 @@ auth.post("/login", async (c) => {
     return c.json({ error: "username and password are required" }, 400);
   }
 
-  const row = await c.env.DB.prepare("SELECT id, password_hash FROM modders WHERE username = ?")
+  const row = await c.env.DB.prepare("SELECT id, password_hash, is_banned FROM modders WHERE username = ?")
     .bind(username)
-    .first<{ id: string; password_hash: string | null }>();
+    .first<{ id: string; password_hash: string | null; is_banned: number }>();
 
   // Same "incorrect username or password" message either way — don't leak
   // which one was wrong.
   if (!row || !row.password_hash || !(await verifyPassword(password, row.password_hash))) {
     return c.json({ error: "incorrect username or password" }, 401);
   }
+  if (row.is_banned) return c.json({ error: "account suspended" }, 403);
 
   const token = await createSession(c.env, row.id);
   return c.json({ token, username }, 200);
@@ -115,7 +116,7 @@ auth.post("/logout", async (c) => {
 auth.get("/me", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ id: modder.id, username: modder.name });
+  return c.json({ id: modder.id, username: modder.name, isAdmin: modder.isAdmin });
 });
 
 // DELETE /api/auth/me — deletes the account (sessions cascade). Refuses
@@ -133,6 +134,13 @@ auth.delete("/me", async (c) => {
     return c.json({ error: "delete or hand off your mods first (My Mods tab), then delete your account" }, 409);
   }
 
+  // moderation_actions.admin_id is declared ON DELETE SET NULL, but that
+  // action isn't reliably applied by D1 in practice (verified empirically)
+  // — done explicitly here so the audit trail survives account deletion
+  // instead of leaving a dangling admin_id or (with a stricter constraint)
+  // blocking the delete outright, same reasoning as routes/admin.ts's
+  // DELETE /users/:id.
+  await c.env.DB.prepare("UPDATE moderation_actions SET admin_id = NULL WHERE admin_id = ?").bind(modder.id).run();
   await c.env.DB.prepare("DELETE FROM modders WHERE id = ?").bind(modder.id).run();
   return c.body(null, 204);
 });

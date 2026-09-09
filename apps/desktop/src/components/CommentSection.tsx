@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
 import type { Comment } from "@openwf-mod-manager/shared";
-import { fetchComments, postComment } from "../api";
-import { getCommenterName, setCommenterName } from "../settings";
+import { deleteCommentAdmin, fetchComments, postComment } from "../api";
+import { getApiKey, getCommenterName, setCommenterName } from "../settings";
+import { useAccount } from "../useAccount";
+import { TrashIcon } from "../icons";
 import ReportButton from "./ReportButton";
 
 // No account system exists in this project (see docs/architecture.md) —
 // commenting is open, and authorName is just remembered locally for
 // convenience, not verified.
 export default function CommentSection({ modId }: { modId: string }) {
+  const { account } = useAccount();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(getCommenterName());
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchComments(modId)
@@ -35,6 +39,20 @@ export default function CommentSection({ modId }: { modId: string }) {
       setError(String(e));
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function handleAdminDelete(commentId: number) {
+    const apiKey = getApiKey();
+    if (!apiKey) return;
+    setDeletingId(commentId);
+    try {
+      await deleteCommentAdmin(modId, commentId, apiKey);
+      setComments((c) => c.filter((x) => x.id !== commentId));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -64,6 +82,15 @@ export default function CommentSection({ modId }: { modId: string }) {
               </div>
               <p className="comment__body">{c.body}</p>
               <ReportButton targetType="comment" targetId={String(c.id)} />
+              {account?.isAdmin && (
+                <button
+                  className="button button--danger comment__admin-delete"
+                  disabled={deletingId === c.id}
+                  onClick={() => handleAdminDelete(c.id)}
+                >
+                  <TrashIcon className="btn-icon" /> Delete (admin)
+                </button>
+              )}
             </li>
           ))}
         </ul>

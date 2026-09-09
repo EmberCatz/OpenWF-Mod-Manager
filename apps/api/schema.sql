@@ -5,12 +5,17 @@
 -- authenticated via the sessions table below) don't need one — it only
 -- exists for the older out-of-band-issued keys (scripts/create-modder.mjs).
 -- Both auth styles resolve to the same modder row; see auth.ts.
+-- is_admin/is_banned are never settable via any HTTP route — only through
+-- scripts/grant-admin.mjs's printed SQL, run directly against D1 by the
+-- operator. See docs/architecture.md § Admin & moderation.
 CREATE TABLE IF NOT EXISTS modders (
     id            TEXT PRIMARY KEY,       -- uuid
     name          TEXT NOT NULL,
     api_key_hash  TEXT UNIQUE,            -- sha256(api_key + UPLOAD_API_KEY_SALT), hex
     username      TEXT UNIQUE,            -- self-service account login, see routes/auth.ts
     password_hash TEXT,                   -- pbkdf2$<iterations>$<saltB64>$<hashB64>, see passwords.ts — never the plaintext
+    is_admin      INTEGER NOT NULL DEFAULT 0,
+    is_banned     INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -113,3 +118,22 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports (status, created_at);
+
+-- Audit trail for admin actions (routes/admin.ts and the admin-bypass paths
+-- in routes/mods.ts) — who did what to which mod/comment/user/report, and
+-- when. Nothing reads this back in the app yet; it's there so an action can
+-- be traced after the fact if a moderation call is disputed.
+-- admin_id is nullable with ON DELETE SET NULL — the audit trail survives
+-- the actor's account being deleted (it just loses attribution), rather
+-- than blocking the deletion outright (see migration 0011).
+CREATE TABLE IF NOT EXISTS moderation_actions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id    TEXT REFERENCES modders(id) ON DELETE SET NULL,
+    action      TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id   TEXT NOT NULL,
+    details     TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_moderation_actions_target ON moderation_actions (target_type, target_id);

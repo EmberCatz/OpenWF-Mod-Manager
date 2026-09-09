@@ -16,6 +16,13 @@ export async function hashToken(token: string, salt: string): Promise<string> {
 export interface Modder {
   id: string;
   name: string;
+  isAdmin: boolean;
+}
+
+type ModderRow = { id: string; name: string; is_admin: number; is_banned: number };
+
+function toModder(row: ModderRow): Modder {
+  return { id: row.id, name: row.name, isAdmin: !!row.is_admin };
 }
 
 // Looks up the modder behind the Authorization: Bearer <token> header.
@@ -23,7 +30,9 @@ export interface Modder {
 // or a session token from username+password login (sessions.token_hash,
 // routes/auth.ts) — both resolve to the same Modder shape, so every other
 // route stays oblivious to which one was used. Returns null if the header
-// is missing/malformed or nothing matches — callers should respond 401.
+// is missing/malformed, nothing matches, or the account is banned — a
+// banned account should look logged-out everywhere immediately, not just
+// at login, regardless of which outstanding token/key it uses.
 export async function authenticate(c: Context<{ Bindings: Env }>): Promise<Modder | null> {
   const header = c.req.header("Authorization");
   if (!header?.startsWith("Bearer ")) return null;
@@ -33,20 +42,21 @@ export async function authenticate(c: Context<{ Bindings: Env }>): Promise<Modde
 
   const hash = await hashToken(token, c.env.UPLOAD_API_KEY_SALT);
 
-  const byApiKey = await c.env.DB.prepare("SELECT id, name FROM modders WHERE api_key_hash = ?")
+  const byApiKey = await c.env.DB.prepare("SELECT id, name, is_admin, is_banned FROM modders WHERE api_key_hash = ?")
     .bind(hash)
-    .first<Modder>();
-  if (byApiKey) return byApiKey;
+    .first<ModderRow>();
+  if (byApiKey) return byApiKey.is_banned ? null : toModder(byApiKey);
 
   const bySession = await c.env.DB.prepare(
-    `SELECT m.id, m.name FROM sessions s
+    `SELECT m.id, m.name, m.is_admin, m.is_banned FROM sessions s
      JOIN modders m ON m.id = s.modder_id
      WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
   )
     .bind(hash)
-    .first<Modder>();
+    .first<ModderRow>();
 
-  return bySession ?? null;
+  if (!bySession || bySession.is_banned) return null;
+  return toModder(bySession);
 }
 
 // Used only by the (out-of-band) modder-onboarding script, not by any HTTP

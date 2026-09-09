@@ -7,6 +7,15 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Admin & moderation interface — an `is_admin` flag (grantable only via
+      `apps/api/scripts/grant-admin.mjs`, never through any route), a
+      hidden Admin tab (Users: ban/unban/delete; Reports: resolve/dismiss,
+      replacing manual `reports:list` checks), and a "Delete (admin)"
+      button surfaced directly on `ModDetail`/`CommentSection` rather than
+      a separate mod-browser. Ban (reversible, kills sessions immediately)
+      is the default moderation action against accounts; hard delete is
+      gated behind the account no longer owning mods. Every action logs to
+      a new `moderation_actions` audit table (`routes/admin.ts`)
 - [x] Responsive multi-column layout for wide windows — mod detail is now
       a 2-column split (details/versions left, code preview right, which
       stretches via CSS Grid to match the left column's height); Upload
@@ -80,8 +89,6 @@ testing) rather than letting them evaporate.
 ## Ideas, not committed to yet
 - [ ] Auto-detect a likely Warframe install path instead of requiring manual
       folder selection in Settings
-- [ ] An actual in-app review queue for reports, once there's more than one
-      operator or more than a handful of reports to justify it
 
 ## Known correctness gaps
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of

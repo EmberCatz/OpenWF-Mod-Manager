@@ -202,8 +202,9 @@ shape but doesn't retroactively apply to a DB that already exists.
 | `GET /api/mods/mine` | token | Mods owned by the caller — "My Mods" tab. |
 | `POST /api/mods` | token | Create a mod + its first version (creates a GitHub Release + uploads the zip as its asset). |
 | `POST /api/mods/:id/versions` | token (owner only) | Add a new version to an existing mod (same GitHub flow). |
-| `DELETE /api/mods/:id/versions/:version` | token (owner only) | Remove one version (D1 row, then best-effort GitHub release delete). |
-| `DELETE /api/mods/:id` | token (owner only) | Remove a mod and all its versions (cascades in D1, then best-effort GitHub release deletes). |
+| `DELETE /api/mods/:id/versions/:version` | token (owner, or admin) | Remove one version (D1 row, then best-effort GitHub release delete). |
+| `DELETE /api/mods/:id` | token (owner, or admin) | Remove a mod and all its versions (cascades in D1, then best-effort GitHub release deletes). |
+| `DELETE /api/mods/:modId/comments/:commentId` | token (admin only) | Remove a comment — comments have no owner concept at all, so this is admin-only from the start, not a bypass of anything. |
 
 "Token" above means either kind `authenticate()` accepts (see below) — an
 API key or a session token, both sent as `Authorization: Bearer <...>`.
@@ -233,6 +234,49 @@ after 30 days.
 `src/github.ts` wraps the three GitHub REST calls involved: create a
 release, upload an asset to it, and (best-effort, on a D1 write failure
 after the GitHub side already succeeded) delete the orphaned release.
+
+## Admin & moderation (`apps/api/src/routes/admin.ts`)
+
+A single `is_admin` boolean on `modders` — not full RBAC, unnecessary at
+this scale. **There is no HTTP route that sets it.** The only way to grant
+or revoke it is `apps/api/scripts/grant-admin.mjs`, which (like
+`create-modder.mjs`) prints SQL for the operator to run directly against
+D1 rather than touching it itself — so there's no privilege-escalation
+surface via the API, ever.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/admin/users` | List every account, with mod-ownership count. |
+| `POST /api/admin/users/:id/ban` | Suspend an account: `is_banned = 1` (checked in `authenticate()`, so it takes effect immediately on every outstanding token/key, not just at next login) + drops its `sessions` rows. Refuses on your own id. |
+| `POST /api/admin/users/:id/unban` | Reverses the above. |
+| `DELETE /api/admin/users/:id` | Hard delete. Refuses on your own id, and refuses (409) while the account still owns mods — same guard as the self-service `DELETE /api/auth/me`, so an admin has to delete those mods first (via the bypass above) rather than silently cascading them away. |
+| `GET /api/admin/reports?status=open\|resolved\|dismissed\|all` | Reads the `reports` table (see "Ideas" in `TODO.md` — this replaces the old `reports:list` npm script as the normal way to check it, though that script still works). |
+| `POST /api/admin/reports/:id/resolve` / `/dismiss` | Updates a report's status. |
+
+**Ban, not delete, is the default moderation action against accounts** —
+reversible, doesn't touch the account's mods/comments, and takes effect
+everywhere immediately. This mirrors how most platforms handle this (a
+suspension rather than an instant hard delete) rather than this project
+inventing its own convention.
+
+Every admin action is logged to `moderation_actions` (who, what, on which
+target, when) — nothing reads it back in the app; it exists so a
+moderation call can be traced after the fact if it's disputed.
+`admin_id` is nullable: if the admin who logged an action later deletes
+their own account, the row survives (it just loses attribution) rather
+than blocking the deletion. Note this is enforced in application code
+(`DELETE /api/auth/me` and `DELETE /api/admin/users/:id` both null it out
+explicitly before deleting the modder row) rather than relying on the
+schema's `ON DELETE SET NULL` — that FK action didn't reliably fire against
+D1 in testing, so don't depend on it doing anything on its own.
+
+Mod/version delete accept an admin caller as well as the owner (one added
+`|| modder.isAdmin` condition each in `routes/mods.ts`, logged when it's
+the admin path that let the request through) — deliberately **not** a
+separate admin-only mod-browser UI. The desktop app instead surfaces a
+"Delete (admin)" button directly on `ModDetail`/`CommentSection` when the
+logged-in account is an admin, reusing the existing mod-detail/comment
+views rather than duplicating them.
 
 ## Security & billing-risk notes
 

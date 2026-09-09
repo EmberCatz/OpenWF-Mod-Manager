@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { authenticate } from "../auth";
 import { checkRateLimit, clientIp } from "../rateLimit";
+import { logModerationAction } from "../moderation";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
 import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UpdateModMetadata, UploadMetadata } from "@openwf-mod-manager/shared";
@@ -548,10 +549,12 @@ mods.post("/:id/versions", async (c) => {
 });
 
 // DELETE /api/mods/:id/versions/:version — remove a single version.
-// Only the mod's owner may delete. D1 row goes first so the API stops
-// advertising it immediately; the GitHub release delete is best-effort
-// after that — if it fails, the worst case is a harmless orphaned release
-// with nothing in the listing pointing at it.
+// The mod's owner may delete, or an admin acting as moderation (logged to
+// moderation_actions when it's the admin bypass, not the owner, doing it).
+// D1 row goes first so the API stops advertising it immediately; the
+// GitHub release delete is best-effort after that — if it fails, the worst
+// case is a harmless orphaned release with nothing in the listing pointing
+// at it.
 mods.delete("/:id/versions/:version", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
@@ -563,7 +566,8 @@ mods.delete("/:id/versions/:version", async (c) => {
     owner_id: string;
   }>();
   if (!modRow) return c.json({ error: "not found" }, 404);
-  if (modRow.owner_id !== modder.id) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
+  const isOwner = modRow.owner_id === modder.id;
+  if (!isOwner && !modder.isAdmin) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
 
   const versionRow = await c.env.DB.prepare("SELECT github_release_id FROM mod_versions WHERE mod_id = ? AND version = ?")
     .bind(modId, version)
@@ -572,11 +576,13 @@ mods.delete("/:id/versions/:version", async (c) => {
 
   await c.env.DB.prepare("DELETE FROM mod_versions WHERE mod_id = ? AND version = ?").bind(modId, version).run();
   await deleteReleaseBestEffort(c.env, versionRow.github_release_id);
+  if (!isOwner) await logModerationAction(c.env, modder.id, "delete_mod_version", "mod", `${modId}@${version}`);
 
   return c.body(null, 204);
 });
 
 // DELETE /api/mods/:id — remove a mod and every one of its versions.
+// The mod's owner may delete, or an admin acting as moderation (logged).
 // mod_versions rows cascade-delete via the schema's ON DELETE CASCADE;
 // each version's GitHub release is then deleted best-effort.
 mods.delete("/:id", async (c) => {
@@ -588,7 +594,8 @@ mods.delete("/:id", async (c) => {
     owner_id: string;
   }>();
   if (!modRow) return c.json({ error: "not found" }, 404);
-  if (modRow.owner_id !== modder.id) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
+  const isOwner = modRow.owner_id === modder.id;
+  if (!isOwner && !modder.isAdmin) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
 
   const { results: versionRows } = await c.env.DB.prepare("SELECT github_release_id FROM mod_versions WHERE mod_id = ?")
     .bind(modId)
@@ -597,6 +604,7 @@ mods.delete("/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM mods WHERE id = ?").bind(modId).run();
 
   await Promise.all(versionRows.map((v) => deleteReleaseBestEffort(c.env, v.github_release_id)));
+  if (!isOwner) await logModerationAction(c.env, modder.id, "delete_mod", "mod", modId);
 
   return c.body(null, 204);
 });
@@ -647,6 +655,23 @@ mods.post("/:id/comments", async (c) => {
     .first();
 
   return c.json(rowToComment(result), 201);
+});
+
+// DELETE /api/mods/:modId/comments/:commentId — admin-only. Comments have
+// no owner/account concept at all (authorName is free text), so unlike the
+// mod/version deletes above this isn't a bypass of an existing owner-check
+// — it's the only way this route has ever been deletable.
+mods.delete("/:modId/comments/:commentId", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+  if (!modder.isAdmin) return c.json({ error: "forbidden — admin only" }, 403);
+
+  const commentId = c.req.param("commentId");
+  const result = await c.env.DB.prepare("DELETE FROM comments WHERE id = ? RETURNING id").bind(commentId).first();
+  if (!result) return c.json({ error: "not found" }, 404);
+
+  await logModerationAction(c.env, modder.id, "delete_comment", "comment", commentId);
+  return c.body(null, 204);
 });
 
 // GET /api/mods/:id/reviews?reviewerId=... — aggregate rating, plus the

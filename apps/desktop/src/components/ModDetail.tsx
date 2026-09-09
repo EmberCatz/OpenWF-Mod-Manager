@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import type { ModWithVersions, ModVersion, ReviewSummary } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
-import { downloadModFile, fetchMod, fetchReviewSummary, postReview } from "../api";
+import { deleteMod, downloadModFile, fetchMod, fetchReviewSummary, postReview } from "../api";
 import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
 import { listZipTextEntries, type ZipTextEntry } from "../native";
 import { getReviewerId } from "../reviewerId";
+import { getApiKey } from "../settings";
+import { useAccount } from "../useAccount";
 import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
 import StarRating from "./StarRating";
 import FilePreview from "./FilePreview";
@@ -40,11 +42,14 @@ function formatCount(n: number): string {
 }
 
 export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) {
+  const { account } = useAccount();
   const [mod, setMod] = useState<ModWithVersions | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionState>({ status: "idle" });
   const [installedVersion, setInstalledVersionState] = useState<string | null>(null);
+  const [adminConfirming, setAdminConfirming] = useState(false);
+  const [adminBusy, setAdminBusy] = useState(false);
 
   const [previewFiles, setPreviewFiles] = useState<ZipTextEntry[]>([]);
   const [previewLoading, setPreviewLoading] = useState(true);
@@ -132,6 +137,23 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
     }
   }
 
+  // Admin moderation action — deleteMod already accepts any admin caller,
+  // not just the mod's owner (see routes/mods.ts), so this reuses the same
+  // client function My Mods' owner-delete button uses.
+  async function handleAdminDelete() {
+    const apiKey = getApiKey();
+    if (!mod || !apiKey) return;
+    setAdminBusy(true);
+    try {
+      await deleteMod(mod.id, apiKey);
+      onChanged();
+      onBack();
+    } catch (e) {
+      setAction({ status: "error", message: String(e) });
+      setAdminBusy(false);
+    }
+  }
+
   return (
     <div className="mod-detail fade-in">
       <button className="button" onClick={onBack}>← Back</button>
@@ -157,6 +179,23 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                 </span>
               </div>
               <ReportButton targetType="mod" targetId={mod.id} />
+              {account?.isAdmin && (
+                <div className="field__row">
+                  {adminConfirming ? (
+                    <>
+                      <span className="error">Delete this mod (admin)? This can't be undone.</span>
+                      <button className="button button--danger" disabled={adminBusy} onClick={handleAdminDelete}>
+                        Confirm
+                      </button>
+                      <button className="button" onClick={() => setAdminConfirming(false)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="button button--danger" onClick={() => setAdminConfirming(true)}>
+                      <TrashIcon className="btn-icon" /> Delete (admin)
+                    </button>
+                  )}
+                </div>
+              )}
               {mod.tags.length > 0 && (
                 <div className="mod-card__tags">
                   {mod.tags.map((t) => (
