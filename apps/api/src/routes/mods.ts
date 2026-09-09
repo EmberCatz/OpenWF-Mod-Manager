@@ -3,7 +3,7 @@ import type { Env } from "../env";
 import { authenticate } from "../auth";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
-import type { Mod, ModVersion, ModWithVersions, UploadMetadata } from "@openwf-mod-manager/shared";
+import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UploadMetadata } from "@openwf-mod-manager/shared";
 
 export const mods = new Hono<{ Bindings: Env }>();
 
@@ -15,6 +15,9 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_SCREENSHOTS = 10;
 const MAX_TAGS = 15;
 const MAX_TAG_LENGTH = 30;
+const MAX_COMMENT_BODY_LENGTH = 2000;
+const MAX_AUTHOR_NAME_LENGTH = 40;
+const MAX_COMMENTS_LISTED = 200;
 
 // Single-file mods (the common case) upload a raw .pluto/.txt directly —
 // no zip/extraction step. .zip is still accepted for mods that need more
@@ -94,6 +97,16 @@ function rowToVersion(row: any): ModVersion {
     checksum: row.checksum,
     gameVersions: JSON.parse(row.game_versions ?? '["all"]'),
     changelog: row.changelog,
+    createdAt: row.created_at,
+  };
+}
+
+function rowToComment(row: any): Comment {
+  return {
+    id: row.id,
+    modId: row.mod_id,
+    authorName: row.author_name,
+    body: row.body,
     createdAt: row.created_at,
   };
 }
@@ -408,4 +421,109 @@ mods.delete("/:id", async (c) => {
   await Promise.all(versionRows.map((v) => deleteReleaseBestEffort(c.env, v.github_release_id)));
 
   return c.body(null, 204);
+});
+
+// GET /api/mods/:id/comments — newest first. No auth: this project has no
+// account system for regular users, only modder API keys for uploads (see
+// docs/architecture.md). authorName is whatever the commenter typed.
+mods.get("/:id/comments", async (c) => {
+  const modId = c.req.param("id");
+  const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
+  if (!mod) return c.json({ error: "not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT * FROM comments WHERE mod_id = ? ORDER BY created_at DESC LIMIT ?"
+  )
+    .bind(modId, MAX_COMMENTS_LISTED)
+    .all();
+
+  return c.json(results.map(rowToComment) as Comment[]);
+});
+
+// POST /api/mods/:id/comments — { authorName, body }. Deliberately open,
+// same billing-risk reasoning as the rest of this API: worst case is text
+// spam, not money — see docs/architecture.md § Security & billing-risk notes.
+mods.post("/:id/comments", async (c) => {
+  const modId = c.req.param("id");
+  const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
+  if (!mod) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ authorName?: string; body?: string }>().catch(() => null);
+  const authorName = body?.authorName?.trim();
+  const commentBody = body?.body?.trim();
+  if (!authorName || authorName.length > MAX_AUTHOR_NAME_LENGTH) {
+    return c.json({ error: `authorName must be 1-${MAX_AUTHOR_NAME_LENGTH} characters` }, 400);
+  }
+  if (!commentBody || commentBody.length > MAX_COMMENT_BODY_LENGTH) {
+    return c.json({ error: `body must be 1-${MAX_COMMENT_BODY_LENGTH} characters` }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const result = await c.env.DB.prepare(
+    "INSERT INTO comments (mod_id, author_name, body, created_at) VALUES (?, ?, ?, ?) RETURNING *"
+  )
+    .bind(modId, authorName, commentBody, now)
+    .first();
+
+  return c.json(rowToComment(result), 201);
+});
+
+// GET /api/mods/:id/reviews?reviewerId=... — aggregate rating, plus the
+// caller's own rating if it sent its reviewerId (a per-install random UUID,
+// see apps/desktop/src/reviewerId.ts — not a real account).
+mods.get("/:id/reviews", async (c) => {
+  const modId = c.req.param("id");
+  const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
+  if (!mod) return c.json({ error: "not found" }, 404);
+
+  const agg = await c.env.DB.prepare("SELECT AVG(rating) as avg, COUNT(*) as count FROM reviews WHERE mod_id = ?")
+    .bind(modId)
+    .first<{ avg: number | null; count: number }>();
+
+  let myRating: number | null = null;
+  const reviewerId = c.req.query("reviewerId");
+  if (reviewerId) {
+    const mine = await c.env.DB.prepare("SELECT rating FROM reviews WHERE mod_id = ? AND reviewer_id = ?")
+      .bind(modId, reviewerId)
+      .first<{ rating: number }>();
+    myRating = mine?.rating ?? null;
+  }
+
+  const summary: ReviewSummary = { average: agg?.avg ?? 0, count: agg?.count ?? 0, myRating };
+  return c.json(summary);
+});
+
+// POST /api/mods/:id/reviews — { reviewerId, rating }. Upserts: rating the
+// same mod again from the same install updates the existing row instead of
+// adding a duplicate (see the reviews table's PRIMARY KEY in schema.sql).
+mods.post("/:id/reviews", async (c) => {
+  const modId = c.req.param("id");
+  const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
+  if (!mod) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ reviewerId?: string; rating?: number }>().catch(() => null);
+  const reviewerId = body?.reviewerId?.trim();
+  const rating = body?.rating;
+  if (!reviewerId || reviewerId.length > 100) {
+    return c.json({ error: "reviewerId is required" }, 400);
+  }
+  if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return c.json({ error: "rating must be an integer 1-5" }, 400);
+  }
+
+  const now = new Date().toISOString();
+  await c.env.DB.prepare(
+    `INSERT INTO reviews (mod_id, reviewer_id, rating, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (mod_id, reviewer_id) DO UPDATE SET rating = excluded.rating, updated_at = excluded.updated_at`
+  )
+    .bind(modId, reviewerId, rating, now, now)
+    .run();
+
+  const agg = await c.env.DB.prepare("SELECT AVG(rating) as avg, COUNT(*) as count FROM reviews WHERE mod_id = ?")
+    .bind(modId)
+    .first<{ avg: number | null; count: number }>();
+
+  const summary: ReviewSummary = { average: agg?.avg ?? 0, count: agg?.count ?? 0, myRating: rating };
+  return c.json(summary, 201);
 });

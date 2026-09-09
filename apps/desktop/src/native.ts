@@ -60,3 +60,16 @@ export async function installModZip(zipBytes: ArrayBuffer, targetDir: string): P
 export async function uninstallFiles(paths: string[]): Promise<void> {
   await invoke("uninstall_files", { paths });
 }
+
+export interface ZipTextEntry {
+  name: string;
+  content: string;
+}
+
+// Lists the text-decodable entries of a zip in memory (mod detail's file
+// preview) — nothing is written to disk, nothing is installed.
+export async function listZipTextEntries(zipBytes: ArrayBuffer): Promise<ZipTextEntry[]> {
+  return invoke<ZipTextEntry[]>("list_zip_text_entries", {
+    zipBytes: Array.from(new Uint8Array(zipBytes)),
+  });
+}

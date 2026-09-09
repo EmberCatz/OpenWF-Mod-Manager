@@ -84,6 +84,54 @@ pub fn install_mod_zip(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<Str
     Ok(extracted)
 }
 
+#[derive(serde::Serialize)]
+pub struct ZipTextEntry {
+    name: String,
+    content: String,
+}
+
+// Zip entries above this size, or beyond this count, are skipped rather
+// than previewed — these mods are small text bundles, so anything bigger
+// is almost certainly not something worth rendering inline anyway.
+const MAX_PREVIEW_ENTRIES: usize = 50;
+const MAX_PREVIEW_ENTRY_BYTES: u64 = 512 * 1024;
+
+// Lists the text-decodable entries of a zip in memory, for the mod detail
+// view's file preview — no extraction to disk, nothing installed. Binary
+// entries (images, etc.) are silently skipped since there's nothing sane
+// to render for them here.
+#[tauri::command]
+pub fn list_zip_text_entries(zip_bytes: Vec<u8>) -> Result<Vec<ZipTextEntry>, String> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("not a valid zip: {e}"))?;
+    let mut out = Vec::new();
+
+    for i in 0..archive.len() {
+        if out.len() >= MAX_PREVIEW_ENTRIES {
+            break;
+        }
+
+        let mut entry = archive.by_index(i).map_err(|e| format!("failed to read zip entry: {e}"))?;
+        if entry.is_dir() || entry.size() > MAX_PREVIEW_ENTRY_BYTES {
+            continue;
+        }
+
+        let Some(relative_path) = entry.enclosed_name() else {
+            continue;
+        };
+
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| format!("failed to read zip entry: {e}"))?;
+
+        let Ok(content) = String::from_utf8(buf) else {
+            continue; // binary — nothing sane to preview
+        };
+
+        out.push(ZipTextEntry { name: relative_path.display().to_string(), content });
+    }
+
+    Ok(out)
+}
+
 // Deletes a set of previously-installed files (paths as returned by
 // install_mod_file / install_mod_zip). Missing files are treated as
 // already-uninstalled, not an error — only real failures (permissions,

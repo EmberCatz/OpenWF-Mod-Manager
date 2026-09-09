@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
-import type { ModWithVersions, ModVersion } from "@openwf-mod-manager/shared";
+import type { ModWithVersions, ModVersion, ReviewSummary } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
-import { fetchMod } from "../api";
+import { downloadModFile, fetchMod, fetchReviewSummary, postReview } from "../api";
 import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
+import { listZipTextEntries, type ZipTextEntry } from "../native";
+import { getReviewerId } from "../reviewerId";
+import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
+import StarRating from "./StarRating";
+import FilePreview from "./FilePreview";
+import CommentSection from "./CommentSection";
 
 interface ModDetailProps {
   modId: string;
@@ -33,6 +39,12 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [action, setAction] = useState<ActionState>({ status: "idle" });
   const [installedVersion, setInstalledVersionState] = useState<string | null>(null);
 
+  const [previewFiles, setPreviewFiles] = useState<ZipTextEntry[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(true);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null);
+
   useEffect(() => {
     fetchMod(modId)
       .then((m) => {
@@ -41,7 +53,41 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       })
       .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
+
+    fetchReviewSummary(modId, getReviewerId())
+      .then(setReviewSummary)
+      .catch(() => {}); // reviews are a nice-to-have — a failure here shouldn't block the rest of the page
   }, [modId]);
+
+  // Previews the latest version's file(s) — a zip's text-decodable entries,
+  // or the single raw .pluto/.txt itself. Nothing touches disk.
+  useEffect(() => {
+    const latest = mod?.versions[0];
+    if (!latest) {
+      setPreviewLoading(false);
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewError(null);
+    downloadModFile(latest.downloadUrl)
+      .then(async (bytes) => {
+        if (latest.fileName.toLowerCase().endsWith(".zip")) {
+          setPreviewFiles(await listZipTextEntries(bytes));
+        } else {
+          setPreviewFiles([{ name: latest.fileName, content: new TextDecoder().decode(bytes) }]);
+        }
+      })
+      .catch((e) => setPreviewError(String(e)))
+      .finally(() => setPreviewLoading(false));
+  }, [mod?.versions[0]?.id]);
+
+  async function handleRate(rating: number) {
+    try {
+      setReviewSummary(await postReview(modId, getReviewerId(), rating));
+    } catch {
+      // leave the previous summary in place — a failed rating isn't worth interrupting the page for
+    }
+  }
 
   async function handleInstall(version: ModVersion) {
     if (!mod) return;
@@ -90,6 +136,15 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
         <>
           <h2 className="mod-detail__title">{mod.name}</h2>
           <p className="muted">by {mod.author}</p>
+          <div className="review-summary">
+            <StarRating value={reviewSummary?.myRating ?? reviewSummary?.average ?? 0} interactive onRate={handleRate} />
+            <span className="muted">
+              {reviewSummary && reviewSummary.count > 0
+                ? `${reviewSummary.average.toFixed(1)} (${reviewSummary.count} rating${reviewSummary.count === 1 ? "" : "s"})`
+                : "No ratings yet"}
+              {reviewSummary?.myRating != null && " — click to change your rating"}
+            </span>
+          </div>
           {mod.tags.length > 0 && (
             <div className="mod-card__tags">
               {mod.tags.map((t) => (
@@ -111,6 +166,9 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
             <p className={`fade-in ${action.status === "error" ? "error" : "muted"}`}>{action.message}</p>
           )}
 
+          <h3>Preview</h3>
+          <FilePreview files={previewFiles} loading={previewLoading} error={previewError} />
+
           <h3>Versions</h3>
           <ul className="version-history">
             {mod.versions.map((version) => {
@@ -122,18 +180,27 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                     <span className="muted">{formatBytes(version.fileSize)}</span>
                     <span className="muted">{formatGameVersions(version.gameVersions)}</span>
                     <span className="muted">{new Date(version.createdAt).toLocaleDateString()}</span>
-                    {isInstalled && <span className="badge badge--installed">Installed</span>}
+                    {isInstalled && (
+                      <span className="badge badge--installed">
+                        <CheckCircleIcon className="btn-icon" /> Installed
+                      </span>
+                    )}
                   </div>
                   {version.changelog && <p className="version-history__changelog">{version.changelog}</p>}
                   <div className="version-history__actions">
                     {canAutoInstall(mod.category) ? (
                       <>
-                        <button className="button" disabled={action.status === "working"} onClick={() => handleInstall(version)}>
+                        <button
+                          className={`button ${isInstalled ? "button--reinstall" : ""}`}
+                          disabled={action.status === "working"}
+                          onClick={() => handleInstall(version)}
+                        >
+                          {isInstalled && <RefreshIcon className="btn-icon" />}
                           {isInstalled ? "Reinstall" : "Install"}
                         </button>
                         {isInstalled && (
-                          <button className="button" disabled={action.status === "working"} onClick={handleUninstall}>
-                            Uninstall
+                          <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
+                            <TrashIcon className="btn-icon" /> Uninstall
                           </button>
                         )}
                       </>
@@ -147,6 +214,8 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
               );
             })}
           </ul>
+
+          <CommentSection modId={mod.id} />
         </>
       )}
     </div>

@@ -52,3 +52,34 @@ export interface UploadMetadata {
 export interface ApiError {
   error: string;
 }
+
+// A free-text comment left on a mod. No account system exists in this
+// project — authorName is just whatever the commenter typed (see
+// apps/desktop/src/settings.ts's commenterName), not a verified identity.
+export interface Comment {
+  id: number;
+  modId: string;
+  authorName: string;
+  body: string;
+  createdAt: string; // ISO 8601
+}
+
+// A single reviewer's star rating for a mod. reviewerId is a random UUID
+// generated once per install (apps/desktop/src/reviewerId.ts) and persisted
+// in localStorage — enough to let someone update their own rating, not a
+// real identity or anti-abuse mechanism.
+export interface Review {
+  modId: string;
+  reviewerId: string;
+  rating: number; // 1-5
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
+}
+
+// GET /api/mods/:id/reviews response — the aggregate plus (optionally)
+// what this install itself rated it.
+export interface ReviewSummary {
+  average: number; // 0 when count is 0
+  count: number;
+  myRating: number | null;
+}

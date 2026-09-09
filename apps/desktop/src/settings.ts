@@ -6,6 +6,7 @@ const KEYS = {
   metadataPatchesPath: "owmm.metadataPatchesPath",
   scriptsPath: "owmm.scriptsPath",
   apiKey: "owmm.apiKey",
+  commenterName: "owmm.commenterName",
 } as const;
 
 export function getMetadataPatchesPath(): string | null {
@@ -30,4 +31,14 @@ export function getApiKey(): string | null {
 
 export function setApiKey(key: string): void {
   localStorage.setItem(KEYS.apiKey, key);
+}
+
+// Remembered so the comment form doesn't ask for a name every time —
+// still just free text, not a verified identity.
+export function getCommenterName(): string {
+  return localStorage.getItem(KEYS.commenterName) ?? "";
+}
+
+export function setCommenterName(name: string): void {
+  localStorage.setItem(KEYS.commenterName, name);
 }

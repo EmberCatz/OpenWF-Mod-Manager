@@ -7,6 +7,18 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Installed/Uninstall/Reinstall now have color + icon cues (green
+      check, red bin, blue repeat-arrow) instead of identical grey buttons
+- [x] File preview in the mod detail view — the latest version's file(s),
+      fixed-height scroll box, tabs to switch between a zip's entries
+      (`components/FilePreview.tsx`, Rust `list_zip_text_entries`)
+- [x] Comments — open, no account system, name is just remembered locally
+      (`components/CommentSection.tsx`, `comments` D1 table)
+- [x] Reviews — 0-5 stars, color scales red→green with the average,
+      one rating per install (`components/StarRating.tsx`, `reviews` D1 table)
+- [x] Grid/list view toggle in Browse, remembered in localStorage
+- [x] Sidebar filters in Browse — type (metadata patch / pluto script /
+      other), game version, tags — replacing the old top-of-page tag bar
 - [x] Installed-state tracking — Browse/detail now know what's actually on
       disk (`installed.ts`), not just what's available
 - [x] Uninstall — removes exactly the files a mod's install wrote
