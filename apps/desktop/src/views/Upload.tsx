@@ -238,95 +238,121 @@ export default function Upload() {
         <button className={`tab ${mode === "update" ? "tab--active" : ""}`} onClick={() => setMode("update")}>Update existing</button>
       </div>
 
-      {mode === "new" ? (
-        <>
-          <label className="field">
-            <span>Name</span>
-            <input type="text" value={newModForm.name} onChange={(e) => setNewModForm({ ...newModForm, name: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Author</span>
-            <input type="text" value={newModForm.author} onChange={(e) => setNewModForm({ ...newModForm, author: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Description</span>
-            <textarea value={newModForm.description} onChange={(e) => setNewModForm({ ...newModForm, description: e.target.value })} rows={3} />
-          </label>
-          <label className="field">
-            <span>Category</span>
-            <select value={newModForm.category} onChange={(e) => setNewModForm({ ...newModForm, category: e.target.value as ModCategory })}>
-              <option value="metadata-patch">Metadata Patch</option>
-              <option value="pluto-script">Pluto Script</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Version</span>
-            <input type="text" value={newModForm.version} onChange={(e) => setNewModForm({ ...newModForm, version: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Changelog (optional)</span>
-            <textarea value={newModForm.changelog} onChange={(e) => setNewModForm({ ...newModForm, changelog: e.target.value })} rows={2} />
-          </label>
-          <label className="field">
-            <span>Thumbnail URL (optional)</span>
-            <span className="hint">A link to an image already hosted elsewhere (Discord, Imgur, etc.) — not uploaded through this app.</span>
-            <input type="text" value={newModForm.thumbnailUrl} onChange={(e) => setNewModForm({ ...newModForm, thumbnailUrl: e.target.value })} placeholder="https://..." />
-            <ThumbnailPreview
-              url={newModForm.thumbnailUrl}
-              position={newModForm.thumbnailPosition}
-              onPositionChange={(thumbnailPosition) => setNewModForm({ ...newModForm, thumbnailPosition })}
-            />
-          </label>
-          <label className="field">
-            <span>Screenshot URLs (optional)</span>
-            <span className="hint">One link per line, same as above.</span>
-            <textarea value={newModForm.screenshotUrls} onChange={(e) => setNewModForm({ ...newModForm, screenshotUrls: e.target.value })} rows={3} placeholder="https://...&#10;https://..." />
-            <ScreenshotPreviewList urls={previewScreenshotUrls} />
-          </label>
-          <label className="field">
-            <span>Tags (optional)</span>
-            <span className="hint">Free-form — type and press Enter. Suggestions are pulled from tags other mods already use.</span>
-            <TagInput tags={newModForm.tags} onChange={(tags) => setNewModForm({ ...newModForm, tags })} suggestions={existingTags} />
-          </label>
-        </>
-      ) : (
-        <>
-          <label className="field">
-            <span>Mod</span>
-            <select value={selectedModId} onChange={(e) => setSelectedModId(e.target.value)}>
-              {existingMods.length === 0 && <option value="">Loading…</option>}
-              {existingMods.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>New version</span>
-            <input type="text" value={updateVersion} onChange={(e) => setUpdateVersion(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Changelog (optional)</span>
-            <textarea value={updateChangelog} onChange={(e) => setUpdateChangelog(e.target.value)} rows={2} />
-          </label>
-        </>
-      )}
+      <div className="upload-grid">
+        {mode === "new" ? (
+          <>
+            <div className="upload-card">
+              <h4 className="upload-card__title">Basic Info</h4>
+              <label className="field">
+                <span>Name</span>
+                <input type="text" value={newModForm.name} onChange={(e) => setNewModForm({ ...newModForm, name: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>Author</span>
+                <input type="text" value={newModForm.author} onChange={(e) => setNewModForm({ ...newModForm, author: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>Description</span>
+                <textarea value={newModForm.description} onChange={(e) => setNewModForm({ ...newModForm, description: e.target.value })} rows={3} />
+              </label>
+              <label className="field">
+                <span>Category</span>
+                <select value={newModForm.category} onChange={(e) => setNewModForm({ ...newModForm, category: e.target.value as ModCategory })}>
+                  <option value="metadata-patch">Metadata Patch</option>
+                  <option value="pluto-script">Pluto Script</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Version</span>
+                <input type="text" value={newModForm.version} onChange={(e) => setNewModForm({ ...newModForm, version: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>Changelog (optional)</span>
+                <textarea value={newModForm.changelog} onChange={(e) => setNewModForm({ ...newModForm, changelog: e.target.value })} rows={2} />
+              </label>
+            </div>
 
-      <label className="field">
-        <span>Compatible game versions</span>
-        <GameVersionPicker selected={gameVersions} onChange={setGameVersions} />
-      </label>
+            <div className="upload-card">
+              <h4 className="upload-card__title">Media</h4>
+              <label className="field">
+                <span>Thumbnail URL (optional)</span>
+                <span className="hint">A link to an image already hosted elsewhere (Discord, Imgur, etc.) — not uploaded through this app.</span>
+                <input type="text" value={newModForm.thumbnailUrl} onChange={(e) => setNewModForm({ ...newModForm, thumbnailUrl: e.target.value })} placeholder="https://..." />
+                <ThumbnailPreview
+                  url={newModForm.thumbnailUrl}
+                  position={newModForm.thumbnailPosition}
+                  onPositionChange={(thumbnailPosition) => setNewModForm({ ...newModForm, thumbnailPosition })}
+                />
+              </label>
+              <label className="field">
+                <span>Screenshot URLs (optional)</span>
+                <span className="hint">One link per line, same as above.</span>
+                <textarea value={newModForm.screenshotUrls} onChange={(e) => setNewModForm({ ...newModForm, screenshotUrls: e.target.value })} rows={3} placeholder="https://...&#10;https://..." />
+                <ScreenshotPreviewList urls={previewScreenshotUrls} />
+              </label>
+            </div>
 
-      <div className="field__row">
-        <button className="button" onClick={pickFile}>Choose file…</button>
-        <span className="muted">{filePath ? filePath.split(/[\\/]/).pop() : "No file chosen"}</span>
+            <div className="upload-card">
+              <h4 className="upload-card__title">Tags &amp; Compatibility</h4>
+              <label className="field">
+                <span>Tags (optional)</span>
+                <span className="hint">Free-form — type and press Enter. Suggestions are pulled from tags other mods already use.</span>
+                <TagInput tags={newModForm.tags} onChange={(tags) => setNewModForm({ ...newModForm, tags })} suggestions={existingTags} />
+              </label>
+              <label className="field">
+                <span>Compatible game versions</span>
+                <GameVersionPicker selected={gameVersions} onChange={setGameVersions} />
+              </label>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="upload-card">
+              <h4 className="upload-card__title">Mod &amp; Version</h4>
+              <label className="field">
+                <span>Mod</span>
+                <select value={selectedModId} onChange={(e) => setSelectedModId(e.target.value)}>
+                  {existingMods.length === 0 && <option value="">Loading…</option>}
+                  {existingMods.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>New version</span>
+                <input type="text" value={updateVersion} onChange={(e) => setUpdateVersion(e.target.value)} />
+              </label>
+              <label className="field">
+                <span>Changelog (optional)</span>
+                <textarea value={updateChangelog} onChange={(e) => setUpdateChangelog(e.target.value)} rows={2} />
+              </label>
+            </div>
+
+            <div className="upload-card">
+              <h4 className="upload-card__title">Compatibility</h4>
+              <label className="field">
+                <span>Compatible game versions</span>
+                <GameVersionPicker selected={gameVersions} onChange={setGameVersions} />
+              </label>
+            </div>
+          </>
+        )}
+
+        <div className="upload-card">
+          <h4 className="upload-card__title">File</h4>
+          <div className="field__row">
+            <button className="button" onClick={pickFile}>Choose file…</button>
+            <span className="muted">{filePath ? filePath.split(/[\\/]/).pop() : "No file chosen"}</span>
+          </div>
+
+          <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
+            {status.kind === "working" && <span className="spinner" />}
+            {status.kind === "working" ? "Uploading…" : "Upload"}
+          </button>
+          {status.message && <p className={`fade-in ${status.kind === "error" ? "error" : "muted"}`}>{status.message}</p>}
+        </div>
       </div>
-
-      <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
-        {status.kind === "working" && <span className="spinner" />}
-        {status.kind === "working" ? "Uploading…" : "Upload"}
-      </button>
-      {status.message && <p className={`fade-in ${status.kind === "error" ? "error" : "muted"}`}>{status.message}</p>}
     </div>
   );
 }

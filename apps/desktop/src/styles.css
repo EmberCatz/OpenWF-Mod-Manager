@@ -17,9 +17,23 @@ body {
 }
 
 .app {
-  max-width: 1100px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
+  padding: 2rem 2rem;
+}
+
+/* Shared breakpoint every side-by-side layout below collapses at
+   (ModDetail's columns, Upload's cards, Settings' nav+panel split) — one
+   number so they all fall back to a single stacked column together. */
+@media (max-width: 860px) {
+  .mod-detail-columns,
+  .settings-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .settings-nav {
+    flex-direction: row !important;
+    overflow-x: auto;
+  }
 }
 
 .muted {
@@ -521,16 +535,85 @@ body {
   flex: 1;
 }
 
-.settings,
-.upload-form,
 .edit-mod-form {
   max-width: 480px;
-}
-
-.edit-mod-form {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border);
+}
+
+.upload-form {
+  max-width: 1300px;
+}
+
+.upload-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+
+.upload-card {
+  flex: 1 1 380px;
+  min-width: 0;
+  max-width: 480px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+
+.upload-card__title {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* --- Settings: left nav + right panel --- */
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 480px);
+  gap: 2rem;
+  align-items: start;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  position: sticky;
+  top: 0;
+}
+
+.settings-nav__item {
+  background: none;
+  border: none;
+  color: var(--muted);
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.88rem;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-nav__item:hover {
+  background: var(--panel-alt);
+  color: var(--text);
+}
+
+.settings-nav__item--active {
+  background: var(--panel-alt);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-panel {
+  min-width: 0;
 }
 
 .browse-search {
@@ -570,7 +653,33 @@ body {
 }
 
 .mod-detail {
-  max-width: 640px;
+  max-width: 1300px;
+}
+
+.mod-detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: stretch;
+}
+
+.mod-detail-left {
+  min-width: 0;
+}
+
+.mod-detail-right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mod-detail-right h3 {
+  margin-top: 0;
+}
+
+.mod-detail-right .file-preview {
+  flex: 1;
+  min-height: 0;
 }
 
 .mod-detail__title {
@@ -774,6 +883,12 @@ body {
 
 /* --- File preview --- */
 
+.file-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 .file-preview__tabs {
   display: flex;
   flex-wrap: wrap;
@@ -801,7 +916,8 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.75rem 0.9rem;
-  height: 260px;
+  flex: 1;
+  min-height: 200px;
   overflow-y: auto;
   overflow-x: auto;
   font-family: "Cascadia Code", "Consolas", monospace;

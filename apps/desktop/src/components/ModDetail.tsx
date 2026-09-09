@@ -141,89 +141,95 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
 
       {mod && (
         <>
-          <h2 className="mod-detail__title">{mod.name}</h2>
-          <p className="muted">
-            by {mod.author} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
-          </p>
-          <div className="review-summary">
-            <StarRating value={reviewSummary?.myRating ?? reviewSummary?.average ?? 0} interactive onRate={handleRate} />
-            <span className="muted">
-              {reviewSummary && reviewSummary.count > 0
-                ? `${reviewSummary.average.toFixed(1)} (${reviewSummary.count} rating${reviewSummary.count === 1 ? "" : "s"})`
-                : "No ratings yet"}
-              {reviewSummary?.myRating != null && " — click to change your rating"}
-            </span>
-          </div>
-          <ReportButton targetType="mod" targetId={mod.id} />
-          {mod.tags.length > 0 && (
-            <div className="mod-card__tags">
-              {mod.tags.map((t) => (
-                <span key={t} className="badge badge--tag">{t}</span>
-              ))}
-            </div>
-          )}
-          <p className="mod-detail__description">{mod.description}</p>
+          <div className="mod-detail-columns">
+            <div className="mod-detail-left">
+              <h2 className="mod-detail__title">{mod.name}</h2>
+              <p className="muted">
+                by {mod.author} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
+              </p>
+              <div className="review-summary">
+                <StarRating value={reviewSummary?.myRating ?? reviewSummary?.average ?? 0} interactive onRate={handleRate} />
+                <span className="muted">
+                  {reviewSummary && reviewSummary.count > 0
+                    ? `${reviewSummary.average.toFixed(1)} (${reviewSummary.count} rating${reviewSummary.count === 1 ? "" : "s"})`
+                    : "No ratings yet"}
+                  {reviewSummary?.myRating != null && " — click to change your rating"}
+                </span>
+              </div>
+              <ReportButton targetType="mod" targetId={mod.id} />
+              {mod.tags.length > 0 && (
+                <div className="mod-card__tags">
+                  {mod.tags.map((t) => (
+                    <span key={t} className="badge badge--tag">{t}</span>
+                  ))}
+                </div>
+              )}
+              <p className="mod-detail__description">{mod.description}</p>
 
-          {mod.screenshotUrls.length > 0 && (
-            <div className="mod-detail__screenshots">
-              {mod.screenshotUrls.map((url) => (
-                <img key={url} src={url} alt="" className="mod-detail__screenshot" />
-              ))}
-            </div>
-          )}
+              {mod.screenshotUrls.length > 0 && (
+                <div className="mod-detail__screenshots">
+                  {mod.screenshotUrls.map((url) => (
+                    <img key={url} src={url} alt="" className="mod-detail__screenshot" />
+                  ))}
+                </div>
+              )}
 
-          {action.message && (
-            <p className={`fade-in ${action.status === "error" ? "error" : "muted"}`}>{action.message}</p>
-          )}
+              {action.message && (
+                <p className={`fade-in ${action.status === "error" ? "error" : "muted"}`}>{action.message}</p>
+              )}
 
-          <h3>Preview</h3>
-          <FilePreview files={previewFiles} loading={previewLoading} error={previewError} />
-
-          <h3>Versions</h3>
-          <ul className="version-history">
-            {mod.versions.map((version) => {
-              const isInstalled = installedVersion === version.version;
-              return (
-                <li key={version.id} className="version-history__row">
-                  <div className="version-history__header">
-                    <span className="version-history__number">v{version.version}</span>
-                    <span className="muted">{formatBytes(version.fileSize)}</span>
-                    <span className="muted">{formatGameVersions(version.gameVersions)}</span>
-                    <span className="muted">{new Date(version.createdAt).toLocaleDateString()}</span>
-                    {isInstalled && (
-                      <span className="badge badge--installed">
-                        <CheckCircleIcon className="btn-icon" /> Installed
-                      </span>
-                    )}
-                  </div>
-                  {version.changelog && <p className="version-history__changelog">{version.changelog}</p>}
-                  <div className="version-history__actions">
-                    {canAutoInstall(mod.category) ? (
-                      <>
-                        <button
-                          className={`button ${isInstalled ? "button--reinstall" : ""}`}
-                          disabled={action.status === "working"}
-                          onClick={() => handleInstall(version)}
-                        >
-                          {isInstalled && <RefreshIcon className="btn-icon" />}
-                          {isInstalled ? "Reinstall" : "Install"}
-                        </button>
+              <h3>Versions</h3>
+              <ul className="version-history">
+                {mod.versions.map((version) => {
+                  const isInstalled = installedVersion === version.version;
+                  return (
+                    <li key={version.id} className="version-history__row">
+                      <div className="version-history__header">
+                        <span className="version-history__number">v{version.version}</span>
+                        <span className="muted">{formatBytes(version.fileSize)}</span>
+                        <span className="muted">{formatGameVersions(version.gameVersions)}</span>
+                        <span className="muted">{new Date(version.createdAt).toLocaleDateString()}</span>
                         {isInstalled && (
-                          <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
-                            <TrashIcon className="btn-icon" /> Uninstall
+                          <span className="badge badge--installed">
+                            <CheckCircleIcon className="btn-icon" /> Installed
+                          </span>
+                        )}
+                      </div>
+                      {version.changelog && <p className="version-history__changelog">{version.changelog}</p>}
+                      <div className="version-history__actions">
+                        {canAutoInstall(mod.category) ? (
+                          <>
+                            <button
+                              className={`button ${isInstalled ? "button--reinstall" : ""}`}
+                              disabled={action.status === "working"}
+                              onClick={() => handleInstall(version)}
+                            >
+                              {isInstalled && <RefreshIcon className="btn-icon" />}
+                              {isInstalled ? "Reinstall" : "Install"}
+                            </button>
+                            {isInstalled && (
+                              <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
+                                <TrashIcon className="btn-icon" /> Uninstall
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <button className="button" disabled={action.status === "working"} onClick={() => handleDownload(version)}>
+                            Download
                           </button>
                         )}
-                      </>
-                    ) : (
-                      <button className="button" disabled={action.status === "working"} onClick={() => handleDownload(version)}>
-                        Download
-                      </button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div className="mod-detail-right">
+              <h3>Preview</h3>
+              <FilePreview files={previewFiles} loading={previewLoading} error={previewError} />
+            </div>
+          </div>
 
           <CommentSection modId={mod.id} />
         </>

@@ -7,6 +7,13 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Responsive multi-column layout for wide windows — mod detail is now
+      a 2-column split (details/versions left, code preview right, which
+      stretches via CSS Grid to match the left column's height); Upload
+      and its Update-existing mode group fields into wrapping side-by-side
+      cards instead of one long stack; Settings is a left-nav/right-panel
+      split. All three collapse back to a single stacked column under
+      ~860px (`.app` widened to 1400px to give this room to breathe)
 - [x] Download/popularity counters per mod — `POST /api/mods/:id/download`
       pinged best-effort on install/save, shown in Browse and detail
 - [x] Lightweight report/moderation flow — a Report button on mods and
