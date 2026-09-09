@@ -1,4 +1,11 @@
 # Copy to .dev.vars (gitignored) for local `wrangler dev`.
-# In production, set the real value with: wrangler secret put UPLOAD_API_KEY_SALT
+# In production, set the real values with:
+#   wrangler secret put UPLOAD_API_KEY_SALT
+#   wrangler secret put GITHUB_TOKEN
 
 UPLOAD_API_KEY_SALT=change-me-to-a-long-random-string
+
+# Fine-grained GitHub PAT scoped to just the storage repo, with
+# "Contents: Read and write" permission (needed to create releases and
+# upload assets). Generate at https://github.com/settings/personal-access-tokens
+GITHUB_TOKEN=github_pat_change-me

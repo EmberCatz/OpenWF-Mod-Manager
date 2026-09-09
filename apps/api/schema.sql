@@ -20,14 +20,15 @@ CREATE TABLE IF NOT EXISTS mods (
 );
 
 CREATE TABLE IF NOT EXISTS mod_versions (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    mod_id       TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
-    version      TEXT NOT NULL,           -- e.g. "1.2.0"
-    r2_key       TEXT NOT NULL UNIQUE,    -- object key in the MOD_BUCKET R2 bucket
-    file_size    INTEGER NOT NULL,        -- bytes
-    checksum     TEXT NOT NULL,           -- sha256 of the zip, hex
-    changelog    TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    mod_id             TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
+    version            TEXT NOT NULL,           -- e.g. "1.2.0"
+    download_url       TEXT NOT NULL,           -- GitHub release asset's browser_download_url (public, direct)
+    github_release_id  INTEGER NOT NULL,        -- needed to delete/replace the release later
+    file_size          INTEGER NOT NULL,        -- bytes
+    checksum           TEXT NOT NULL,           -- sha256 of the zip, hex
+    changelog          TEXT,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (mod_id, version)
 );
 

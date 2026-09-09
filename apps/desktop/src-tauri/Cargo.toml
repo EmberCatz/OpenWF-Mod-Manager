@@ -4,10 +4,6 @@ version = "0.1.0"
 description = "Desktop mod manager for OpenWF / SpaceNinjaServer"
 edition = "2021"
 
-[lib]
-name = "openwf_mod_manager_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

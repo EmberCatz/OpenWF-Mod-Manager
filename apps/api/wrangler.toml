@@ -3,27 +3,23 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 # --- D1 (metadata) ---
-# Create with: wrangler d1 create openwf-mod-manager
-# then paste the returned database_id below.
 [[d1_databases]]
 binding = "DB"
 database_name = "openwf-mod-manager"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "a330ba8c-47f6-4872-b906-bd67d833e552"
 
-# --- R2 (mod zip storage) ---
-# Create with: wrangler r2 bucket create openwf-mod-manager
-[[r2_buckets]]
-binding = "MOD_BUCKET"
-bucket_name = "openwf-mod-manager"
-
-# Public base URL the R2 bucket is served from (either an r2.dev dev URL,
-# or a custom domain attached to the bucket). Download URLs returned by
-# the API are built from this + the object key, so clients fetch straight
-# from R2 and never touch the Worker for the actual file transfer.
+# --- GitHub Releases (mod zip storage) ---
+# Mods here are small (metadata patches / .pluto scripts, sub-1MB), so
+# GitHub Releases is a better fit than object storage: zero cost, zero
+# billing surface, no payment method required anywhere in the stack.
+# The repo below just needs to exist; releases are created per mod version
+# by the Worker via the GitHub API (see src/github.ts).
 [vars]
-PUBLIC_BUCKET_URL = "https://REPLACE_WITH_R2_PUBLIC_URL"
+GITHUB_OWNER = "EmberCatz"
+GITHUB_REPO = "OpenWF-Mod-Manager"
 
 # Secrets (do NOT put these in this file — set them with:
 #   wrangler secret put UPLOAD_API_KEY_SALT
+#   wrangler secret put GITHUB_TOKEN
 # and for local dev, put them in apps/api/.dev.vars (gitignored), see
 # .dev.vars.example).

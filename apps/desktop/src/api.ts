@@ -16,10 +16,10 @@ export async function fetchMod(id: string): Promise<ModWithVersions> {
   return res.json();
 }
 
-// Downloads a mod's zip straight from its R2 download URL — this never
-// touches the Worker API, which is the whole point (zero API egress cost).
-// Uses the Tauri HTTP plugin rather than the webview's fetch so it isn't
-// subject to browser CORS restrictions against the R2 bucket's origin.
+// Downloads a mod's zip straight from its GitHub release asset URL — this
+// never touches the Worker API. Uses the Tauri HTTP plugin rather than the
+// webview's fetch so it isn't subject to browser CORS restrictions against
+// GitHub's asset-hosting origin.
 export async function downloadModZip(downloadUrl: string): Promise<ArrayBuffer> {
   const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
   const res = await tauriFetch(downloadUrl);

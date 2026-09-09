@@ -1,11 +1,16 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { authenticate } from "../auth";
+import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
 import type { Mod, ModVersion, ModWithVersions, UploadMetadata } from "@openwf-mod-manager/shared";
 
 export const mods = new Hono<{ Bindings: Env }>();
 
-const MAX_ZIP_BYTES = 200 * 1024 * 1024; // 200 MB — generous for a mod/patch zip, well under R2/Worker limits
+// OpenWF mods (metadata patches, .pluto scripts) are small text-based
+// bundles — real-world examples top out well under 1 MB. This cap is
+// generous headroom, not a sizing assumption; GitHub's own release-asset
+// limit is 2 GB, far beyond anything this project needs.
+const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB
 
 function slugify(name: string): string {
   return name
@@ -20,16 +25,12 @@ async function sha256HexOf(buf: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function toDownloadUrl(env: Env, r2Key: string): string {
-  return `${env.PUBLIC_BUCKET_URL.replace(/\/$/, "")}/${r2Key}`;
-}
-
-function rowToVersion(env: Env, row: any): ModVersion {
+function rowToVersion(row: any): ModVersion {
   return {
     id: row.id,
     modId: row.mod_id,
     version: row.version,
-    downloadUrl: toDownloadUrl(env, row.r2_key),
+    downloadUrl: row.download_url,
     fileSize: row.file_size,
     checksum: row.checksum,
     changelog: row.changelog,
@@ -50,11 +51,11 @@ function rowToMod(row: any): Mod {
 }
 
 // GET /api/mods — list every mod with its latest version, for the desktop
-// app's browse/list view. Download URLs point straight at R2; the client
-// never re-requests the Worker to fetch the actual zip.
+// app's browse/list view. Download URLs point straight at a GitHub release
+// asset; the client never re-requests the Worker to fetch the actual zip.
 mods.get("/", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT m.*, v.id as v_id, v.version, v.r2_key, v.file_size, v.checksum, v.changelog, v.created_at as v_created_at
+    `SELECT m.*, v.id as v_id, v.version, v.download_url, v.file_size, v.checksum, v.changelog, v.created_at as v_created_at
      FROM mods m
      LEFT JOIN mod_versions v ON v.mod_id = m.id
      WHERE v.id = (SELECT id FROM mod_versions WHERE mod_id = m.id ORDER BY created_at DESC LIMIT 1)
@@ -66,11 +67,11 @@ mods.get("/", async (c) => {
     ...rowToMod(row),
     versions: row.v_id
       ? [
-          rowToVersion(c.env, {
+          rowToVersion({
             id: row.v_id,
             mod_id: row.id,
             version: row.version,
-            r2_key: row.r2_key,
+            download_url: row.download_url,
             file_size: row.file_size,
             checksum: row.checksum,
             changelog: row.changelog,
@@ -97,7 +98,7 @@ mods.get("/:id", async (c) => {
 
   const result: ModWithVersions = {
     ...rowToMod(modRow),
-    versions: versionRows.map((r: any) => rowToVersion(c.env, r)),
+    versions: versionRows.map((r: any) => rowToVersion(r)),
   };
   return c.json(result);
 });
@@ -105,7 +106,9 @@ mods.get("/:id", async (c) => {
 // POST /api/mods — create a new mod + its first version.
 // multipart/form-data: "file" (the zip), "metadata" (JSON body matching
 // UploadMetadata). Requires a modder API key (see auth.ts) so uploads
-// can't be spammed anonymously into the free R2/D1 tier.
+// can't be spammed anonymously — the zip is pushed to a GitHub Release,
+// which has no billing surface at all, so the only real cost of abuse here
+// is repo clutter, not money.
 mods.post("/", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
@@ -143,25 +146,28 @@ mods.post("/", async (c) => {
 
   const buf = await file.arrayBuffer();
   const checksum = await sha256HexOf(buf);
-  const r2Key = `${modId}/${metadata.version}/${modId}-${metadata.version}.zip`;
 
-  await c.env.MOD_BUCKET.put(r2Key, buf, {
-    httpMetadata: { contentType: "application/zip" },
-  });
+  const release = await createRelease(c.env, modId, metadata.version, metadata.changelog);
+  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, `${modId}-${metadata.version}.zip`, buf);
 
   const now = new Date().toISOString();
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO mods (id, name, author, description, category, owner_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(modId, metadata.name, metadata.author, metadata.description ?? "", metadata.category, modder.id, now, now),
-    c.env.DB.prepare(
-      `INSERT INTO mod_versions (mod_id, version, r2_key, file_size, checksum, changelog, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(modId, metadata.version, r2Key, file.size, checksum, metadata.changelog ?? null, now),
-  ]);
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO mods (id, name, author, description, category, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(modId, metadata.name, metadata.author, metadata.description ?? "", metadata.category, modder.id, now, now),
+      c.env.DB.prepare(
+        `INSERT INTO mod_versions (mod_id, version, download_url, github_release_id, file_size, checksum, changelog, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(modId, metadata.version, asset.browserDownloadUrl, release.id, file.size, checksum, metadata.changelog ?? null, now),
+    ]);
+  } catch (e) {
+    await deleteReleaseBestEffort(c.env, release.id);
+    throw e;
+  }
 
-  return c.json({ id: modId, downloadUrl: toDownloadUrl(c.env, r2Key) }, 201);
+  return c.json({ id: modId, downloadUrl: asset.browserDownloadUrl }, 201);
 });
 
 // POST /api/mods/:id/versions — add a new version to an existing mod.
@@ -195,26 +201,32 @@ mods.post("/:id/versions", async (c) => {
   }
   if (!metadata.version) return c.json({ error: "metadata requires version" }, 400);
 
+  const existingVersion = await c.env.DB.prepare("SELECT id FROM mod_versions WHERE mod_id = ? AND version = ?")
+    .bind(modId, metadata.version)
+    .first();
+  if (existingVersion) {
+    return c.json({ error: `version '${metadata.version}' already exists for this mod` }, 409);
+  }
+
   const buf = await file.arrayBuffer();
   const checksum = await sha256HexOf(buf);
-  const r2Key = `${modId}/${metadata.version}/${modId}-${metadata.version}.zip`;
 
-  await c.env.MOD_BUCKET.put(r2Key, buf, {
-    httpMetadata: { contentType: "application/zip" },
-  });
+  const release = await createRelease(c.env, modId, metadata.version, metadata.changelog);
+  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, `${modId}-${metadata.version}.zip`, buf);
 
   const now = new Date().toISOString();
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mod_versions (mod_id, version, r2_key, file_size, checksum, changelog, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(modId, metadata.version, r2Key, file.size, checksum, metadata.changelog ?? null, now),
+        `INSERT INTO mod_versions (mod_id, version, download_url, github_release_id, file_size, checksum, changelog, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(modId, metadata.version, asset.browserDownloadUrl, release.id, file.size, checksum, metadata.changelog ?? null, now),
       c.env.DB.prepare("UPDATE mods SET updated_at = ? WHERE id = ?").bind(now, modId),
     ]);
   } catch (e) {
-    return c.json({ error: `version '${metadata.version}' already exists for this mod` }, 409);
+    await deleteReleaseBestEffort(c.env, release.id);
+    throw e;
   }
 
-  return c.json({ id: modId, version: metadata.version, downloadUrl: toDownloadUrl(c.env, r2Key) }, 201);
+  return c.json({ id: modId, version: metadata.version, downloadUrl: asset.browserDownloadUrl }, 201);
 });

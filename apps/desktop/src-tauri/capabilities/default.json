@@ -9,8 +9,9 @@
       "identifier": "http:default",
       "allow": [
         { "url": "https://*.workers.dev/*" },
-        { "url": "https://*.r2.dev/*" },
-        { "url": "https://*.r2.cloudflarestorage.com/*" }
+        { "url": "https://github.com/*" },
+        { "url": "https://objects.githubusercontent.com/*" },
+        { "url": "https://release-assets.githubusercontent.com/*" }
       ]
     },
     "fs:default",

@@ -6,6 +6,7 @@ dist-ssr/
 # Tauri / Rust
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/Cargo.lock
+apps/desktop/src-tauri/gen/schemas/
 
 # Cloudflare
 .wrangler/
@@ -21,6 +22,12 @@ apps/api/.dev.vars
 Thumbs.db
 .vscode/
 .idea/
+
+# Claude Code (keeps local settings, session state, and conversation
+# history out of this public repo)W
+.claude/
+CLAUDE.local.md
+**/.claude/settings.local.json
 
 # Logs
 *.log

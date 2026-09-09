@@ -12,7 +12,7 @@ stack choices, data flow, schema, API surface, and security notes.
 | Path | What's in it |
 |---|---|
 | [`apps/desktop/`](apps/desktop/) | The Tauri + React + TypeScript client. |
-| [`apps/api/`](apps/api/) | The Cloudflare Worker API (Hono), backed by D1 + R2. |
+| [`apps/api/`](apps/api/) | The Cloudflare Worker API (Hono), backed by D1 + GitHub Releases. |
 | [`packages/shared/`](packages/shared/) | TypeScript types shared between the two, mirroring the D1 schema. |
 | [`docs/architecture.md`](docs/architecture.md) | Design doc: stack, data flow, schema, API routes, security follow-ups. |
 

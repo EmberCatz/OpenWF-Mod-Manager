@@ -17,7 +17,7 @@ export interface ModVersion {
   id: number;
   modId: string;
   version: string; // e.g. "1.2.0" or a date tag
-  downloadUrl: string; // public R2 URL — client fetches this directly, not through the API
+  downloadUrl: string; // GitHub release asset's browser_download_url — client fetches this directly, not through the API
   fileSize: number; // bytes
   checksum: string; // sha256 of the zip, hex-encoded
   changelog: string | null;
