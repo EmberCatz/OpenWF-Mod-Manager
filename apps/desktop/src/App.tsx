@@ -1,11 +1,13 @@
 import { useState } from "react";
 import Browse from "./views/Browse";
 import Upload from "./views/Upload";
+import MyMods from "./views/MyMods";
 import Settings from "./views/Settings";
 
 const TABS = [
   { id: "browse", label: "Browse", view: Browse },
   { id: "upload", label: "Upload", view: Upload },
+  { id: "my-mods", label: "My Mods", view: MyMods },
   { id: "settings", label: "Settings", view: Settings },
 ] as const;
 

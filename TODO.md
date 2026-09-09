@@ -7,6 +7,24 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Grid view: uniform card size, thumbnail always above the title, no
+      description, full-width Install button that becomes a split
+      Uninstall/▾Reinstall button once installed (`SplitButton.tsx`)
+- [x] List view: description clamped to 3 lines with Show more/less
+      (`ClampedText.tsx`); bigger Install button paired with the version
+      number at the card's right edge
+- [x] Thumbnail/screenshot URL fields in Upload now preview the image and
+      flag broken links before you submit (`ThumbnailPreview.tsx`,
+      `ScreenshotPreviewList.tsx`)
+- [x] Thumbnail focal-point picker — since linked images can't actually be
+      cropped/re-hosted, dragging the preview sets an object-position
+      (`thumbnail_position` column) instead
+- [x] Fullscreen popup for the file preview, plus basic Pluto syntax
+      highlighting (`plutoHighlight.tsx` — hand-rolled tokenizer, no dep)
+- [x] "My Mods" tab — lists mods owned by the current API key, with
+      delete-version/delete-mod actions wired to the (already-existing)
+      DELETE endpoints. Real data, but "mine" == "this API key" until an
+      actual account system exists.
 - [x] Installed/Uninstall/Reinstall now have color + icon cues (green
       check, red bin, blue repeat-arrow) instead of identical grey buttons
 - [x] File preview in the mod detail view — the latest version's file(s),
@@ -50,3 +68,7 @@ testing) rather than letting them evaporate.
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of
       about.openwf.io/versions — won't pick up new patches until someone
       re-scrapes and regenerates the file
+- [ ] Grid view's default thumbnail (`Browse.tsx`'s `DEFAULT_THUMBNAIL_URL`)
+      is a placeholder SVG — swap in the real fallback image once it has a
+      URL (this app only links to externally-hosted images, see
+      docs/architecture.md, so it just needs a link, not a file)

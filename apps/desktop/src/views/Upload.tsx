@@ -6,6 +6,8 @@ import { addModVersion, fetchModList, uploadNewMod } from "../api";
 import { pickModFileToUpload, readFileBytes } from "../native";
 import { getApiKey } from "../settings";
 import TagInput from "../components/TagInput";
+import ThumbnailPreview from "../components/ThumbnailPreview";
+import ScreenshotPreviewList from "../components/ScreenshotPreviewList";
 
 type Mode = "new" | "update";
 
@@ -17,6 +19,7 @@ const initialNewModForm = {
   version: "1.0.0",
   changelog: "",
   thumbnailUrl: "",
+  thumbnailPosition: "50% 50%",
   screenshotUrls: "",
   tags: [] as string[],
 };
@@ -144,6 +147,10 @@ export default function Upload() {
   }, []);
 
   const existingTags = [...new Set(existingMods.flatMap((m) => m.tags))].sort();
+  const previewScreenshotUrls = newModForm.screenshotUrls
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   async function pickFile() {
     const path = await pickModFileToUpload();
@@ -189,6 +196,7 @@ export default function Upload() {
             changelog: newModForm.changelog || undefined,
             gameVersions,
             thumbnailUrl: newModForm.thumbnailUrl || undefined,
+            thumbnailPosition: newModForm.thumbnailUrl ? newModForm.thumbnailPosition : undefined,
             screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
             tags: newModForm.tags,
           },
@@ -264,11 +272,17 @@ export default function Upload() {
             <span>Thumbnail URL (optional)</span>
             <span className="hint">A link to an image already hosted elsewhere (Discord, Imgur, etc.) — not uploaded through this app.</span>
             <input type="text" value={newModForm.thumbnailUrl} onChange={(e) => setNewModForm({ ...newModForm, thumbnailUrl: e.target.value })} placeholder="https://..." />
+            <ThumbnailPreview
+              url={newModForm.thumbnailUrl}
+              position={newModForm.thumbnailPosition}
+              onPositionChange={(thumbnailPosition) => setNewModForm({ ...newModForm, thumbnailPosition })}
+            />
           </label>
           <label className="field">
             <span>Screenshot URLs (optional)</span>
             <span className="hint">One link per line, same as above.</span>
             <textarea value={newModForm.screenshotUrls} onChange={(e) => setNewModForm({ ...newModForm, screenshotUrls: e.target.value })} rows={3} placeholder="https://...&#10;https://..." />
+            <ScreenshotPreviewList urls={previewScreenshotUrls} />
           </label>
           <label className="field">
             <span>Tags (optional)</span>

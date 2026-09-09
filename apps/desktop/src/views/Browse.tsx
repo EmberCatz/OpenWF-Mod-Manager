@@ -6,6 +6,8 @@ import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from ".
 import { getInstalled } from "../installed";
 import { CheckCircleIcon, GridIcon, ListIcon, RefreshIcon, TrashIcon } from "../icons";
 import ModDetail from "../components/ModDetail";
+import SplitButton from "../components/SplitButton";
+import ClampedText from "../components/ClampedText";
 
 type ActionState = { status: "idle" | "working" | "done" | "error"; message?: string };
 type ViewMode = "list" | "grid";
@@ -18,6 +20,17 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS);
 const VIEW_MODE_KEY = "owmm.browseViewMode";
+
+// Placeholder shown in grid view when a mod has no thumbnailUrl, so every
+// card gets the same picture-above-title layout. This app only ever links
+// to externally-hosted images (never hosts them itself — see
+// docs/architecture.md), so swap this for a real hosted URL once picked;
+// until then this keeps grid view visually consistent on its own.
+const DEFAULT_THUMBNAIL_URL =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='240'><rect width='100%' height='100%' fill='#262a34'/><text x='50%' y='50%' font-family='sans-serif' font-size='22' fill='#5b8cff' text-anchor='middle' dominant-baseline='middle'>OpenWF</text></svg>`
+  );
 
 function formatGameVersions(tags: string[]): string {
   if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";
@@ -219,15 +232,79 @@ export default function Browse() {
               // this component to re-render, which re-reads localStorage below.
               const installedEntry = getInstalled(mod.id);
               const isUpToDate = !!installedEntry && !!version && installedEntry.version === version.version;
+              const working = action.status === "working";
+              const style = { animationDelay: `${Math.min(i, 8) * 35}ms` };
+
+              const installLabel = autoInstallable
+                ? isUpToDate
+                  ? "Reinstall"
+                  : installedEntry
+                    ? "Update"
+                    : "Install"
+                : "Download";
+              const onInstallOrDownload = () => (autoInstallable ? handleInstall(mod) : handleDownload(mod));
+
+              if (viewMode === "grid") {
+                return (
+                  <li key={mod.id} className="mod-card mod-card--grid fade-in" style={style}>
+                    <img
+                      className="mod-card__thumb"
+                      src={mod.thumbnailUrl ?? DEFAULT_THUMBNAIL_URL}
+                      alt=""
+                      style={{ objectPosition: mod.thumbnailPosition }}
+                    />
+                    <div className="mod-card__grid-body">
+                      <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
+                        {mod.name}
+                      </button>
+                      <span className="mod-card__author">by {mod.author}</span>
+                      <div className="mod-card__grid-meta">
+                        <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
+                        {isUpToDate && (
+                          <span className="badge badge--installed">
+                            <CheckCircleIcon className="btn-icon" />
+                          </span>
+                        )}
+                      </div>
+                      <div className="mod-card__grid-actions">
+                        {version ? (
+                          isUpToDate ? (
+                            <SplitButton
+                              mainLabel={<><TrashIcon className="btn-icon" /> Uninstall</>}
+                              mainClassName="button--danger"
+                              disabled={working}
+                              onMain={() => handleUninstall(mod)}
+                              menuItems={[
+                                {
+                                  label: <><RefreshIcon className="btn-icon" /> Reinstall</>,
+                                  onClick: onInstallOrDownload,
+                                },
+                              ]}
+                            />
+                          ) : (
+                            <button className="button button--primary split-button__main" disabled={working} onClick={onInstallOrDownload}>
+                              {working && <span className="spinner" />}
+                              {working ? "Working…" : installLabel}
+                            </button>
+                          )
+                        ) : (
+                          <span className="muted">No versions yet</span>
+                        )}
+                      </div>
+                      {action.message && (
+                        <span className={`fade-in ${action.status === "error" ? "error" : "muted"}`}>{action.message}</span>
+                      )}
+                    </div>
+                  </li>
+                );
+              }
 
               return (
-                <li
-                  key={mod.id}
-                  className={`mod-card fade-in ${viewMode === "grid" ? "mod-card--grid" : ""}`}
-                  style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}
-                >
+                <li key={mod.id} className="mod-card fade-in" style={style}>
                   <div className="mod-card__body">
-                    {mod.thumbnailUrl && <img className="mod-card__thumb" src={mod.thumbnailUrl} alt="" />}
+                    {mod.thumbnailUrl && (
+                      <img className="mod-card__thumb" src={mod.thumbnailUrl} alt="" style={{ objectPosition: mod.thumbnailPosition }} />
+                    )}
                     <div className="mod-card__main">
                       <div className="mod-card__header">
                         <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
@@ -235,7 +312,7 @@ export default function Browse() {
                         </button>
                         <span className="mod-card__author">by {mod.author}</span>
                       </div>
-                      <p className="mod-card__description">{mod.description}</p>
+                      <ClampedText className="mod-card__description" text={mod.description} lines={3} />
                       {mod.tags.length > 0 && (
                         <div className="mod-card__tags">
                           {mod.tags.map((t) => (
@@ -247,38 +324,26 @@ export default function Browse() {
                       )}
                       <div className="mod-card__footer">
                         <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
-                        <span className="mod-card__version">{version ? `v${version.version}` : "no versions yet"}</span>
                         {version && <span className="muted">{formatGameVersions(version.gameVersions)}</span>}
                         {isUpToDate && (
                           <span className="badge badge--installed">
                             <CheckCircleIcon className="btn-icon" /> Installed
                           </span>
                         )}
+                        {version && <span className="mod-card__version">v{version.version}</span>}
                         {version && (
                           <button
-                            className={`button ${isUpToDate ? "button--reinstall" : ""}`}
-                            disabled={action.status === "working"}
-                            onClick={() => (autoInstallable ? handleInstall(mod) : handleDownload(mod))}
+                            className={`button button--lg ${isUpToDate ? "button--reinstall" : ""}`}
+                            disabled={working}
+                            onClick={onInstallOrDownload}
                           >
-                            {action.status === "working" && <span className="spinner" />}
-                            {action.status !== "working" && isUpToDate && <RefreshIcon className="btn-icon" />}
-                            {action.status === "working"
-                              ? "Working…"
-                              : autoInstallable
-                                ? isUpToDate
-                                  ? "Reinstall"
-                                  : installedEntry
-                                    ? "Update"
-                                    : "Install"
-                                : "Download"}
+                            {working && <span className="spinner" />}
+                            {!working && isUpToDate && <RefreshIcon className="btn-icon" />}
+                            {working ? "Working…" : installLabel}
                           </button>
                         )}
                         {autoInstallable && installedEntry && (
-                          <button
-                            className="button button--danger"
-                            disabled={action.status === "working"}
-                            onClick={() => handleUninstall(mod)}
-                          >
+                          <button className="button button--danger" disabled={working} onClick={() => handleUninstall(mod)}>
                             <TrashIcon className="btn-icon" /> Uninstall
                           </button>
                         )}

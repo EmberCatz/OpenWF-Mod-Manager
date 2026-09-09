@@ -10,6 +10,7 @@ export interface Mod {
   description: string;
   category: ModCategory;
   thumbnailUrl: string | null; // external link only — never hosted by this project, see docs/architecture.md
+  thumbnailPosition: string; // CSS object-position, e.g. "50% 50%" — lets the uploader pick a focal point since the linked image can't actually be cropped/re-hosted
   screenshotUrls: string[]; // external links only, same reasoning
   tags: string[]; // free-form, user-defined (Notion-style) — unlike gameVersions, not validated against a fixed list
   createdAt: string; // ISO 8601
@@ -45,6 +46,7 @@ export interface UploadMetadata {
   changelog?: string;
   gameVersions?: string[]; // defaults to ["all"] server-side if omitted
   thumbnailUrl?: string; // external link only — see Mod.thumbnailUrl
+  thumbnailPosition?: string; // see Mod.thumbnailPosition — defaults to "50% 50%" server-side
   screenshotUrls?: string[]; // external links only — see Mod.screenshotUrls
   tags?: string[]; // free-form — see Mod.tags
 }

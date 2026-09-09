@@ -16,6 +16,17 @@ export async function fetchMod(id: string): Promise<ModWithVersions> {
   return res.json();
 }
 
+// For the "My Mods" tab — every mod owned by this API key. There's no
+// broader account system yet (see docs/architecture.md), so the API key
+// itself is what "mine" means today.
+export async function fetchMyMods(apiKey: string): Promise<ModWithVersions[]> {
+  const res = await fetch(`${API_BASE_URL}/api/mods/mine`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`failed to load your mods: ${res.status}`);
+  return res.json();
+}
+
 // Downloads a mod version's file (.pluto, .txt, or .zip) straight from its
 // GitHub release asset URL — this never touches the Worker API. Uses the
 // Tauri HTTP plugin rather than the webview's fetch so it isn't subject to
@@ -69,6 +80,32 @@ export async function addModVersion(
   apiKey: string
 ): Promise<{ id: string; version: string; downloadUrl: string }> {
   return postMultipart(`/api/mods/${modId}/versions`, metadata, fileBytes, fileName, apiKey);
+}
+
+async function authedDelete(path: string, apiKey: string): Promise<void> {
+  const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
+  const res = await tauriFetch(`${API_BASE_URL}${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (res.ok) return;
+  const rawBody = await res.text();
+  let message = `request failed: ${res.status}`;
+  try {
+    const body = JSON.parse(rawBody) as { error?: string };
+    if (body.error) message = body.error;
+  } catch {
+    // non-JSON body — fall back to the generic message above
+  }
+  throw new Error(message);
+}
+
+export async function deleteMod(modId: string, apiKey: string): Promise<void> {
+  return authedDelete(`/api/mods/${modId}`, apiKey);
+}
+
+export async function deleteModVersion(modId: string, version: string, apiKey: string): Promise<void> {
+  return authedDelete(`/api/mods/${modId}/versions/${encodeURIComponent(version)}`, apiKey);
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {

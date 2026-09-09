@@ -159,6 +159,11 @@ body {
   margin-right: 0.35rem;
 }
 
+.button--lg {
+  padding: 0.55rem 1.2rem;
+  font-size: 0.95rem;
+}
+
 .mod-list {
   list-style: none;
   margin: 0;
@@ -191,10 +196,19 @@ body {
   font-weight: 600;
 }
 
-.mod-card__author,
+.mod-card__author {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .mod-card__version {
   color: var(--muted);
   font-size: 0.85rem;
+  /* Pushes itself and everything after it (the install/uninstall buttons)
+     to the right edge of the footer row as one group, while category/tags/
+     game-version stay left. */
+  margin-left: auto;
+  padding-left: 0.75rem;
 }
 
 .mod-card__description {
@@ -690,23 +704,56 @@ body {
 
 .mod-list--grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.85rem;
+  align-items: stretch;
 }
 
-.mod-card--grid .mod-card__body {
+.mod-card--grid {
+  display: flex;
   flex-direction: column;
+  height: 300px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .mod-card--grid .mod-card__thumb {
   width: 100%;
-  height: 120px;
+  height: 130px;
+  flex-shrink: 0;
+  border-radius: 0;
 }
 
-.mod-card--grid .mod-card__header {
+.mod-card__grid-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
+  padding: 0.75rem 0.9rem 0.9rem;
+}
+
+.mod-card--grid .mod-card__name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mod-card--grid .mod-card__author {
+  display: block;
+  margin-top: 0.1rem;
+}
+
+.mod-card__grid-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.mod-card__grid-actions {
+  margin-top: auto;
+  padding-top: 0.6rem;
 }
 
 /* --- File preview --- */
@@ -828,4 +875,273 @@ body {
 .comment__body {
   margin: 0.3rem 0 0;
   white-space: pre-wrap;
+}
+
+/* --- Split button (grid-view install/uninstall + dropdown) --- */
+
+.split-button {
+  display: flex;
+  width: 100%;
+  position: relative;
+}
+
+.split-button__main {
+  flex: 1;
+  min-width: 0;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #0b1020;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+  border-radius: 6px 0 0 6px;
+  transition: background 0.15s ease;
+}
+
+.split-button__main.button--danger {
+  background: #ff5c5c;
+  border-color: #ff5c5c;
+  color: #1a0808;
+}
+
+.split-button__main:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.split-button__main:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.split-button__toggle {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-left: 1px solid rgba(0, 0, 0, 0.2);
+  color: #0b1020;
+  width: 1.8rem;
+  cursor: pointer;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.75rem;
+}
+
+.split-button--danger .split-button__toggle {
+  background: #ff5c5c;
+  border-color: #ff5c5c;
+  color: #1a0808;
+}
+
+.split-button__toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.split-button__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin-top: 0.25rem;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.split-button__menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.split-button__menu-item:hover {
+  background: var(--panel);
+}
+
+/* --- Clamped description (list view) --- */
+
+.clamped-text__toggle {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  padding: 0.1rem 0;
+  cursor: pointer;
+}
+
+/* --- Thumbnail / screenshot preview (Upload) --- */
+
+.thumbnail-preview {
+  margin-top: 0.5rem;
+}
+
+.thumbnail-preview__frame {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 5 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  cursor: crosshair;
+  touch-action: none;
+  position: relative;
+}
+
+.thumbnail-preview__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.thumbnail-preview__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 0 1rem;
+}
+
+.screenshot-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.screenshot-preview__item {
+  width: 90px;
+  height: 60px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+}
+
+.screenshot-preview__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.screenshot-preview__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 0 0.3rem;
+}
+
+.screenshot-preview__placeholder--error {
+  color: #ff8a8a;
+}
+
+/* --- Fullscreen file preview modal --- */
+
+.file-preview__toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.file-preview__fullscreen-btn {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem;
+  z-index: 1000;
+}
+
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: min(900px, 100%);
+  height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.25rem;
+  gap: 0.5rem;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.modal-box .file-preview__body--fullscreen {
+  flex: 1;
+  height: auto;
+}
+
+/* --- Pluto syntax highlighting --- */
+
+.tok-keyword {
+  color: #ff8ac4;
+}
+
+.tok-string {
+  color: #9be89b;
+}
+
+.tok-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tok-number {
+  color: #ffcb7a;
+}
+
+/* --- My Mods --- */
+
+.my-mods__versions {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.my-mods__version-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.my-mods__version-delete {
+  margin-left: auto;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.6rem;
 }

@@ -56,6 +56,23 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+// A CSS object-position value like "62% 40%" — the focal point the
+// uploader picked in the thumbnail positioner (Upload.tsx). Only the
+// percentage-pair form is accepted; nothing here needs keywords like
+// "left"/"top" or other length units.
+const THUMBNAIL_POSITION_RE = /^(\d{1,3}(?:\.\d+)?)% (\d{1,3}(?:\.\d+)?)%$/;
+
+function validateThumbnailPosition(input: unknown): string | null {
+  if (input === undefined) return "50% 50%";
+  if (typeof input !== "string") return null;
+  const m = THUMBNAIL_POSITION_RE.exec(input);
+  if (!m) return null;
+  const x = parseFloat(m[1]);
+  const y = parseFloat(m[2]);
+  if (x < 0 || x > 100 || y < 0 || y > 100) return null;
+  return input;
+}
+
 // Validates against the hardcoded GAME_VERSIONS list so a version's
 // compatibility tags always mean something real. "all" is a sentinel and
 // mutually exclusive with picking specific versions.
@@ -119,6 +136,7 @@ function rowToMod(row: any): Mod {
     description: row.description,
     category: row.category,
     thumbnailUrl: row.thumbnail_url ?? null,
+    thumbnailPosition: row.thumbnail_position ?? "50% 50%",
     screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
     tags: JSON.parse(row.tags ?? "[]"),
     createdAt: row.created_at,
@@ -138,6 +156,48 @@ mods.get("/", async (c) => {
         OR v.id IS NULL
      ORDER BY m.updated_at DESC`
   ).all();
+
+  const list: ModWithVersions[] = results.map((row: any) => ({
+    ...rowToMod(row),
+    versions: row.v_id
+      ? [
+          rowToVersion({
+            id: row.v_id,
+            mod_id: row.id,
+            version: row.version,
+            file_name: row.file_name,
+            download_url: row.download_url,
+            file_size: row.file_size,
+            checksum: row.checksum,
+            game_versions: row.game_versions,
+            changelog: row.changelog,
+            created_at: row.v_created_at,
+          }),
+        ]
+      : [],
+  }));
+
+  return c.json(list);
+});
+
+// GET /api/mods/mine — every mod owned by the authenticated modder key,
+// for the "My Mods" tab. Registered ahead of GET /:id so "mine" is never
+// swallowed as a mod id. There's no broader account system yet (see
+// docs/architecture.md) — a modder API key is the closest thing to one.
+mods.get("/mine", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at
+     FROM mods m
+     LEFT JOIN mod_versions v ON v.mod_id = m.id
+     WHERE m.owner_id = ?
+       AND (v.id = (SELECT id FROM mod_versions WHERE mod_id = m.id ORDER BY created_at DESC LIMIT 1) OR v.id IS NULL)
+     ORDER BY m.updated_at DESC`
+  )
+    .bind(modder.id)
+    .all();
 
   const list: ModWithVersions[] = results.map((row: any) => ({
     ...rowToMod(row),
@@ -223,6 +283,10 @@ mods.post("/", async (c) => {
   if (metadata.thumbnailUrl !== undefined && !isHttpUrl(metadata.thumbnailUrl)) {
     return c.json({ error: "thumbnailUrl must be an http(s) URL" }, 400);
   }
+  const thumbnailPosition = validateThumbnailPosition(metadata.thumbnailPosition);
+  if (thumbnailPosition === null) {
+    return c.json({ error: "thumbnailPosition must look like 'NN% NN%'" }, 400);
+  }
   const screenshotUrls = validateScreenshotUrls(metadata.screenshotUrls);
   if (!screenshotUrls) return c.json({ error: `screenshotUrls must be an array of http(s) URLs, max ${MAX_SCREENSHOTS}` }, 400);
 
@@ -248,8 +312,8 @@ mods.post("/", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, description, category, thumbnail_url, screenshot_urls, tags, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mods (id, name, author, description, category, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         modId,
         metadata.name,
@@ -257,6 +321,7 @@ mods.post("/", async (c) => {
         metadata.description ?? "",
         metadata.category,
         metadata.thumbnailUrl ?? null,
+        thumbnailPosition,
         JSON.stringify(screenshotUrls),
         JSON.stringify(tags),
         modder.id,

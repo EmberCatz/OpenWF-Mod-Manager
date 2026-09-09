@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS mods (
     author          TEXT NOT NULL,
     description     TEXT NOT NULL DEFAULT '',
     category        TEXT NOT NULL CHECK (category IN ('metadata-patch', 'pluto-script', 'other')),
-    thumbnail_url   TEXT,                     -- external link only, never hosted here — see docs/architecture.md
+    thumbnail_url      TEXT,                     -- external link only, never hosted here — see docs/architecture.md
+    thumbnail_position TEXT NOT NULL DEFAULT '50% 50%', -- CSS object-position focal point, since the linked image can't be re-hosted/cropped
     screenshot_urls TEXT NOT NULL DEFAULT '[]', -- JSON array of external links, same reasoning
     tags            TEXT NOT NULL DEFAULT '[]', -- JSON array of free-form, user-defined tags (not validated against a fixed list)
     owner_id        TEXT NOT NULL REFERENCES modders(id),

@@ -1,0 +1,108 @@
+import { useEffect, useState } from "react";
+import type { ModWithVersions } from "@openwf-mod-manager/shared";
+import { deleteMod, deleteModVersion, fetchMyMods } from "../api";
+import { getApiKey } from "../settings";
+import { TrashIcon } from "../icons";
+
+// "Mine" today just means "uploaded with the API key currently set in
+// Settings" — there's no broader account system yet (see
+// docs/architecture.md). This tab is the placeholder for when there is
+// one; the underlying data (owner_id) is already real.
+export default function MyMods() {
+  const apiKey = getApiKey();
+  const [mods, setMods] = useState<ModWithVersions[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingModId, setConfirmingModId] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  function load() {
+    if (!apiKey) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetchMyMods(apiKey)
+      .then(setMods)
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, [apiKey]);
+
+  async function handleDeleteMod(modId: string) {
+    if (!apiKey) return;
+    setBusyKey(modId);
+    try {
+      await deleteMod(modId, apiKey);
+      setMods((m) => m.filter((mod) => mod.id !== modId));
+      setConfirmingModId(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleDeleteVersion(modId: string, version: string) {
+    if (!apiKey) return;
+    const key = `${modId}@${version}`;
+    setBusyKey(key);
+    try {
+      await deleteModVersion(modId, version, apiKey);
+      setMods((m) => m.map((mod) => (mod.id === modId ? { ...mod, versions: mod.versions.filter((v) => v.version !== version) } : mod)));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  if (!apiKey) {
+    return <p className="muted">Set your API key in Settings to see the mods you've uploaded.</p>;
+  }
+  if (loading) return <p><span className="spinner" /> Loading your mods…</p>;
+  if (error) return <p className="error">{error}</p>;
+  if (mods.length === 0) return <p className="muted fade-in">You haven't uploaded anything yet — try the Upload tab.</p>;
+
+  return (
+    <ul className="mod-list">
+      {mods.map((mod) => (
+        <li key={mod.id} className="mod-card fade-in">
+          <div className="mod-card__header">
+            <span className="mod-card__name">{mod.name}</span>
+            <span className="mod-card__author">{mod.versions.length} version{mod.versions.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul className="my-mods__versions">
+            {mod.versions.map((v) => (
+              <li key={v.id} className="my-mods__version-row">
+                <span>v{v.version}</span>
+                <span className="muted">{new Date(v.createdAt).toLocaleDateString()}</span>
+                <button
+                  className="button button--danger my-mods__version-delete"
+                  disabled={busyKey === `${mod.id}@${v.version}`}
+                  onClick={() => handleDeleteVersion(mod.id, v.version)}
+                >
+                  <TrashIcon className="btn-icon" /> Delete version
+                </button>
+              </li>
+            ))}
+          </ul>
+          {confirmingModId === mod.id ? (
+            <div className="field__row">
+              <span className="error">Delete '{mod.name}' and every version? This can't be undone.</span>
+              <button className="button button--danger" disabled={busyKey === mod.id} onClick={() => handleDeleteMod(mod.id)}>
+                Confirm delete
+              </button>
+              <button className="button" onClick={() => setConfirmingModId(null)}>Cancel</button>
+            </div>
+          ) : (
+            <button className="button button--danger" onClick={() => setConfirmingModId(mod.id)}>
+              <TrashIcon className="btn-icon" /> Delete mod
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
