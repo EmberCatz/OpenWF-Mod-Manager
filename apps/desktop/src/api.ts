@@ -2,7 +2,7 @@ import type { ModWithVersions } from "@openwf-mod-manager/shared";
 
 // Points at the deployed Worker (apps/api). Override for local dev with a
 // .env file (VITE_API_BASE_URL=http://127.0.0.1:8787) once wrangler dev is running.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://openwf-mod-manager-api.<your-subdomain>.workers.dev";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://openwf-mod-manager-api.embercatdev.workers.dev";
 
 export async function fetchModList(): Promise<ModWithVersions[]> {
   const res = await fetch(`${API_BASE_URL}/api/mods`);
