@@ -12,11 +12,15 @@ database_id = "a330ba8c-47f6-4872-b906-bd67d833e552"
 # Mods here are small (metadata patches / .pluto scripts, sub-1MB), so
 # GitHub Releases is a better fit than object storage: zero cost, zero
 # billing surface, no payment method required anywhere in the stack.
-# The repo below just needs to exist; releases are created per mod version
-# by the Worker via the GitHub API (see src/github.ts).
+# Deliberately a separate repo from the app itself (not
+# EmberCatz/OpenWF-Mod-Manager) — otherwise every mod upload and every
+# future app release (installers, version tags) would end up mixed
+# together in the same repo's Releases list. This repo holds nothing but
+# mod Release assets; must stay public (release assets need to be
+# downloadable without auth).
 [vars]
 GITHUB_OWNER = "EmberCatz"
-GITHUB_REPO = "OpenWF-Mod-Manager"
+GITHUB_REPO = "OpenWF-Mods"
 
 # Secrets (do NOT put these in this file — set them with:
 #   wrangler secret put UPLOAD_API_KEY_SALT
