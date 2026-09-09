@@ -37,8 +37,8 @@ export default function App() {
 
       <footer className="app-footer">
         Unofficial, fan-made tool — not affiliated with, endorsed by, or
-        sponsored by Digital Extremes Ltd. WARFRAME® is a registered
-        trademark of Digital Extremes Ltd. Full disclaimer in Settings.
+        sponsored by Warframe's developer or publisher. WARFRAME® is a
+        registered trademark of its owner. Full disclaimer in Settings.
       </footer>
     </main>
   );
