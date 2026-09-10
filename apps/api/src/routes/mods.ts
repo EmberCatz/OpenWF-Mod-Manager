@@ -3,6 +3,7 @@ import type { Env } from "../env";
 import { authenticate } from "../auth";
 import { checkRateLimit, clientIp } from "../rateLimit";
 import { logModerationAction } from "../moderation";
+import { getSetting } from "../appSettings";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
 import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UpdateModMetadata, UploadMetadata } from "@openwf-mod-manager/shared";
@@ -157,17 +158,28 @@ function rowToMod(row: any): Mod {
     screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
     tags: JSON.parse(row.tags ?? "[]"),
     downloadCount: row.download_count ?? 0,
+    commentCount: row.comment_count ?? 0,
+    reviewCount: row.review_count ?? 0,
+    averageRating: row.avg_rating ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
+
+// Appended to m.* in every mods listing query below so Browse can show a
+// comment count and star rating per card without an extra request per mod.
+const AGGREGATE_COLUMNS = `
+     (SELECT COUNT(*) FROM comments c2 WHERE c2.mod_id = m.id) as comment_count,
+     (SELECT COUNT(*) FROM reviews r2 WHERE r2.mod_id = m.id) as review_count,
+     (SELECT AVG(rating) FROM reviews r2 WHERE r2.mod_id = m.id) as avg_rating`;
 
 // GET /api/mods — list every mod with its latest version, for the desktop
 // app's browse/list view. Download URLs point straight at a GitHub release
 // asset; the client never re-requests the Worker to fetch the actual file.
 mods.get("/", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at
+    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at,
+     ${AGGREGATE_COLUMNS}
      FROM mods m
      LEFT JOIN mod_versions v ON v.mod_id = m.id
      WHERE v.id = (SELECT id FROM mod_versions WHERE mod_id = m.id ORDER BY created_at DESC LIMIT 1)
@@ -206,7 +218,8 @@ mods.get("/mine", async (c) => {
   if (!modder) return c.json({ error: "unauthorized" }, 401);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at
+    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at,
+     ${AGGREGATE_COLUMNS}
      FROM mods m
      LEFT JOIN mod_versions v ON v.mod_id = m.id
      WHERE m.owner_id = ?
@@ -242,7 +255,7 @@ mods.get("/mine", async (c) => {
 // GET /api/mods/:id — full detail incl. every version (changelog history).
 mods.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const modRow = await c.env.DB.prepare("SELECT * FROM mods WHERE id = ?").bind(id).first();
+  const modRow = await c.env.DB.prepare(`SELECT m.*, ${AGGREGATE_COLUMNS} FROM mods m WHERE m.id = ?`).bind(id).first();
   if (!modRow) return c.json({ error: "not found" }, 404);
 
   const { results: versionRows } = await c.env.DB.prepare(
@@ -358,6 +371,9 @@ mods.post("/:id/download", async (c) => {
 mods.post("/", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
+  if (!modder.isAdmin && (await getSetting(c.env, "uploads_disabled"))) {
+    return c.json({ error: "uploads_disabled", message: "Uploads are temporarily disabled." }, 423);
+  }
 
   const allowed = await checkRateLimit(c, "mod_upload", modder.id, UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many uploads from this account — wait a bit and try again" }, 429);
@@ -468,6 +484,9 @@ mods.post("/", async (c) => {
 mods.post("/:id/versions", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
+  if (!modder.isAdmin && (await getSetting(c.env, "uploads_disabled"))) {
+    return c.json({ error: "uploads_disabled", message: "Uploads are temporarily disabled." }, 423);
+  }
 
   const allowed = await checkRateLimit(c, "mod_upload", modder.id, UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many uploads from this account — wait a bit and try again" }, 429);
@@ -630,6 +649,10 @@ mods.get("/:id/comments", async (c) => {
 // same billing-risk reasoning as the rest of this API: worst case is text
 // spam, not money — see docs/architecture.md § Security & billing-risk notes.
 mods.post("/:id/comments", async (c) => {
+  if (await getSetting(c.env, "comments_disabled")) {
+    return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
+  }
+
   const allowed = await checkRateLimit(c, "comment", clientIp(c), COMMENT_LIMIT, COMMENT_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many comments from this connection — wait a bit and try again" }, 429);
 
@@ -703,6 +726,10 @@ mods.get("/:id/reviews", async (c) => {
 // same mod again from the same install updates the existing row instead of
 // adding a duplicate (see the reviews table's PRIMARY KEY in schema.sql).
 mods.post("/:id/reviews", async (c) => {
+  if (await getSetting(c.env, "comments_disabled")) {
+    return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
+  }
+
   const allowed = await checkRateLimit(c, "review", clientIp(c), REVIEW_LIMIT, REVIEW_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many ratings from this connection — wait a bit and try again" }, 429);
 

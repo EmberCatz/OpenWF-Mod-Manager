@@ -5,6 +5,10 @@ import { mods } from "./routes/mods";
 import { auth } from "./routes/auth";
 import { reports } from "./routes/reports";
 import { admin } from "./routes/admin";
+import { authenticate } from "./auth";
+import { clientIp } from "./rateLimit";
+import { isIpBanned } from "./ipBan";
+import { getSetting } from "./appSettings";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -12,6 +16,35 @@ const app = new Hono<{ Bindings: Env }>();
 // and http://localhost:<port> in dev — allow both broadly since this API
 // has no cookie-based session to protect (auth is a bearer API key).
 app.use("*", cors());
+
+// Admin "oh shit" gate — checked ahead of every route. An IP ban blocks
+// that address outright; maintenance mode blocks everything else for
+// non-admins. Both are skipped for an authenticated admin caller so an
+// admin can never lock themselves out. /api/auth/* and /api/admin/* stay
+// reachable during maintenance specifically so an admin can still log in
+// and flip it back off — those routes don't expose anything to a
+// non-admin that maintenance mode is meant to hide.
+app.use("*", async (c, next) => {
+  const path = c.req.path;
+  const caller = await authenticate(c).catch(() => null);
+  if (caller?.isAdmin) return next();
+
+  const ip = clientIp(c);
+  if (await isIpBanned(c.env, ip)) {
+    return c.json({ error: "ip_banned", message: "Access from this network has been blocked." }, 403);
+  }
+
+  if (!path.startsWith("/api/auth/") && !path.startsWith("/api/admin/")) {
+    if (await getSetting(c.env, "maintenance_mode")) {
+      return c.json(
+        { error: "maintenance_mode", message: "OpenWF Mod Manager is temporarily offline for maintenance. Please check back soon." },
+        503
+      );
+    }
+  }
+
+  return next();
+});
 
 app.get("/", (c) => c.json({ name: "openwf-mod-manager-api", status: "ok" }));
 

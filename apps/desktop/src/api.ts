@@ -4,16 +4,30 @@ import type { Comment, Mod, ModWithVersions, ReviewSummary, UpdateModMetadata, U
 // .env file (VITE_API_BASE_URL=http://127.0.0.1:8787) once wrangler dev is running.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://openwf-mod-manager-api.embercatdev.workers.dev";
 
+// Reads a plain (non-authed) GET response, surfacing the server's own
+// `message`/`error` field on failure — e.g. site-controls responses like
+// maintenance mode or a disabled feature come with a human-readable
+// message that's worth showing as-is instead of a bare status code.
+async function readJsonOrThrow<T>(res: Response, fallbackMessage: string): Promise<T> {
+  const rawBody = await res.text();
+  if (res.ok) return JSON.parse(rawBody) as T;
+  let parsed: { error?: string; message?: string } | null = null;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    // non-JSON error body — fall back to the generic message below
+  }
+  throw new Error(parsed?.message ?? parsed?.error ?? `${fallbackMessage}: ${res.status}`);
+}
+
 export async function fetchModList(): Promise<ModWithVersions[]> {
   const res = await fetch(`${API_BASE_URL}/api/mods`);
-  if (!res.ok) throw new Error(`failed to load mod list: ${res.status}`);
-  return res.json();
+  return readJsonOrThrow(res, "failed to load mod list");
 }
 
 export async function fetchMod(id: string): Promise<ModWithVersions> {
   const res = await fetch(`${API_BASE_URL}/api/mods/${id}`);
-  if (!res.ok) throw new Error(`failed to load mod '${id}': ${res.status}`);
-  return res.json();
+  return readJsonOrThrow(res, `failed to load mod '${id}'`);
 }
 
 // For the "My Mods" tab — every mod owned by whoever this token belongs to
@@ -126,8 +140,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 export async function fetchComments(modId: string): Promise<Comment[]> {
   const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/comments`);
-  if (!res.ok) throw new Error(`failed to load comments: ${res.status}`);
-  return res.json();
+  return readJsonOrThrow(res, "failed to load comments");
 }
 
 export async function postComment(modId: string, authorName: string, body: string): Promise<Comment> {
@@ -136,8 +149,7 @@ export async function postComment(modId: string, authorName: string, body: strin
 
 export async function fetchReviewSummary(modId: string, reviewerId: string): Promise<ReviewSummary> {
   const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/reviews?reviewerId=${encodeURIComponent(reviewerId)}`);
-  if (!res.ok) throw new Error(`failed to load reviews: ${res.status}`);
-  return res.json();
+  return readJsonOrThrow(res, "failed to load reviews");
 }
 
 export async function postReview(modId: string, reviewerId: string, rating: number): Promise<ReviewSummary> {
@@ -280,4 +292,43 @@ export async function dismissReport(reportId: number, apiKey: string): Promise<v
 
 export async function deleteCommentAdmin(modId: string, commentId: number, apiKey: string): Promise<void> {
   return authedDelete(`/api/mods/${modId}/comments/${commentId}`, apiKey);
+}
+
+// --- Site controls ("oh shit" kill-switches) — see routes/admin.ts § Site controls ---
+
+export interface SiteSettings {
+  maintenanceMode: boolean;
+  uploadsDisabled: boolean;
+  signupsDisabled: boolean;
+  commentsDisabled: boolean;
+}
+
+export async function fetchSiteSettings(apiKey: string): Promise<SiteSettings> {
+  return authedGet("/api/admin/settings", apiKey);
+}
+
+export async function updateSiteSettings(patch: Partial<SiteSettings>, apiKey: string): Promise<SiteSettings> {
+  return authedJson("PATCH", "/api/admin/settings", patch, apiKey);
+}
+
+export async function killAllSessions(apiKey: string): Promise<{ killedCount: number }> {
+  return authedJson("POST", "/api/admin/kill-sessions", {}, apiKey);
+}
+
+export interface BannedIp {
+  ip: string;
+  reason: string | null;
+  bannedAt: string;
+}
+
+export async function fetchBannedIps(apiKey: string): Promise<BannedIp[]> {
+  return authedGet("/api/admin/banned-ips", apiKey);
+}
+
+export async function banIp(ip: string, reason: string, apiKey: string): Promise<void> {
+  await authedJson("POST", "/api/admin/banned-ips", { ip, reason }, apiKey);
+}
+
+export async function unbanIp(ip: string, apiKey: string): Promise<void> {
+  return authedDelete(`/api/admin/banned-ips/${encodeURIComponent(ip)}`, apiKey);
 }

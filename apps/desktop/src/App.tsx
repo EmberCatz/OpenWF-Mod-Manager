@@ -4,6 +4,7 @@ import Upload from "./views/Upload";
 import MyMods from "./views/MyMods";
 import Admin from "./views/Admin";
 import Settings from "./views/Settings";
+import ToastHost from "./components/ToastHost";
 import { useAccount } from "./useAccount";
 
 const ALL_TABS = [
@@ -49,6 +50,8 @@ export default function App() {
         sponsored by Warframe's developer or publisher. WARFRAME® is a
         registered trademark of its owner. Full disclaimer in Settings.
       </footer>
+
+      <ToastHost />
     </main>
   );
 }

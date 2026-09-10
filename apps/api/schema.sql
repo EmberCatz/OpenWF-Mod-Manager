@@ -137,3 +137,24 @@ CREATE TABLE IF NOT EXISTS moderation_actions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_moderation_actions_target ON moderation_actions (target_type, target_id);
+
+-- Admin "oh shit" kill-switches, checked by index.ts's maintenance
+-- middleware plus per-route uploads/signups/comments toggles (see
+-- routes/admin.ts and appSettings.ts). key/value pairs rather than fixed
+-- columns so a new switch never needs a schema change, just a new key.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by  TEXT REFERENCES modders(id) ON DELETE SET NULL
+);
+
+-- IP-level ban, separate from modders.is_banned — abuse from an anonymous
+-- or throwaway account still comes from an IP the per-account ban can't
+-- touch (comments/reviews/reports have no account concept at all).
+CREATE TABLE IF NOT EXISTS banned_ips (
+    ip         TEXT PRIMARY KEY,
+    reason     TEXT,
+    banned_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    banned_by  TEXT REFERENCES modders(id) ON DELETE SET NULL
+);

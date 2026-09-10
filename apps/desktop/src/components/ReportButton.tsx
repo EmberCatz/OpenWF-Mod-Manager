@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { submitReport } from "../api";
+import { toast } from "../toast";
 
 interface ReportButtonProps {
   targetType: "mod" | "comment";
@@ -12,8 +13,7 @@ interface ReportButtonProps {
 export default function ReportButton({ targetType, targetId }: ReportButtonProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
-  const [status, setStatus] = useState<"idle" | "working" | "done" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "working" | "done">("idle");
 
   async function submit() {
     if (!reason.trim()) return;
@@ -22,8 +22,8 @@ export default function ReportButton({ targetType, targetId }: ReportButtonProps
       await submitReport(targetType, targetId, reason.trim());
       setStatus("done");
     } catch (e) {
-      setError(String(e));
-      setStatus("error");
+      toast.error(String(e));
+      setStatus("idle");
     }
   }
 
@@ -56,7 +56,6 @@ export default function ReportButton({ targetType, targetId }: ReportButtonProps
           Cancel
         </button>
       </div>
-      {status === "error" && <p className="error">{error}</p>}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { getReviewerId } from "../reviewerId";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
 import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
+import { toast } from "../toast";
 import StarRating from "./StarRating";
 import FilePreview from "./FilePreview";
 import CommentSection from "./CommentSection";
@@ -110,7 +111,8 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       setInstalledVersionState(version.version);
       onChanged();
     } catch (e) {
-      setAction({ status: "error", message: String(e) });
+      toast.error(String(e));
+      setAction({ status: "idle" });
     }
   }
 
@@ -120,7 +122,8 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       const message = await downloadVersion(version);
       setAction(message ? { status: "done", message } : { status: "idle" });
     } catch (e) {
-      setAction({ status: "error", message: String(e) });
+      toast.error(String(e));
+      setAction({ status: "idle" });
     }
   }
 
@@ -133,7 +136,8 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       setInstalledVersionState(null);
       onChanged();
     } catch (e) {
-      setAction({ status: "error", message: String(e) });
+      toast.error(String(e));
+      setAction({ status: "idle" });
     }
   }
 
@@ -149,7 +153,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       onChanged();
       onBack();
     } catch (e) {
-      setAction({ status: "error", message: String(e) });
+      toast.error(String(e));
       setAdminBusy(false);
     }
   }
@@ -213,9 +217,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                 </div>
               )}
 
-              {action.message && (
-                <p className={`fade-in ${action.status === "error" ? "error" : "muted"}`}>{action.message}</p>
-              )}
+              {action.status === "done" && action.message && <p className="fade-in muted">{action.message}</p>}
 
               <h3>Versions</h3>
               <ul className="version-history">

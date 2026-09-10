@@ -11,14 +11,15 @@ interface StarRatingProps {
   value: number; // 0-5, can be fractional for a display-only average
   interactive?: boolean;
   onRate?: (rating: number) => void;
+  className?: string;
 }
 
-export default function StarRating({ value, interactive = false, onRate }: StarRatingProps) {
+export default function StarRating({ value, interactive = false, onRate, className }: StarRatingProps) {
   const [hover, setHover] = useState<number | null>(null);
   const display = hover ?? value;
 
   return (
-    <span className="star-rating" style={{ color: colorForRating(display) }}>
+    <span className={`star-rating ${className ?? ""}`} style={{ color: colorForRating(display) }}>
       {[1, 2, 3, 4, 5].map((n) => (
         <button
           key={n}

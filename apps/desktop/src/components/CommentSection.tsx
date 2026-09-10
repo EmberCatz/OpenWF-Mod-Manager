@@ -4,6 +4,7 @@ import { deleteCommentAdmin, fetchComments, postComment } from "../api";
 import { getApiKey, getCommenterName, setCommenterName } from "../settings";
 import { useAccount } from "../useAccount";
 import { TrashIcon } from "../icons";
+import { toast } from "../toast";
 import ReportButton from "./ReportButton";
 
 // No account system exists in this project (see docs/architecture.md) —
@@ -34,9 +35,8 @@ export default function CommentSection({ modId }: { modId: string }) {
       setComments((c) => [comment, ...c]);
       setCommenterName(name.trim());
       setBody("");
-      setError(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setPosting(false);
     }
@@ -50,7 +50,7 @@ export default function CommentSection({ modId }: { modId: string }) {
       await deleteCommentAdmin(modId, commentId, apiKey);
       setComments((c) => c.filter((x) => x.id !== commentId));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setDeletingId(null);
     }

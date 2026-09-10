@@ -14,6 +14,9 @@ export interface Mod {
   screenshotUrls: string[]; // external links only, same reasoning
   tags: string[]; // free-form, user-defined (Notion-style) — unlike gameVersions, not validated against a fixed list
   downloadCount: number; // incremented via POST /api/mods/:id/download — best-effort, not a precise audit trail
+  commentCount: number; // COUNT(*) from comments, computed server-side on every read
+  reviewCount: number; // COUNT(*) from reviews, computed server-side on every read
+  averageRating: number; // AVG(rating) from reviews, 0 when reviewCount is 0
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }

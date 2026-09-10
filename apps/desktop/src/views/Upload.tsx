@@ -5,6 +5,7 @@ import type { GameVersionGroup } from "@openwf-mod-manager/shared";
 import { addModVersion, fetchModList, uploadNewMod } from "../api";
 import { pickModFileToUpload, readFileBytes } from "../native";
 import { getApiKey } from "../settings";
+import { toast } from "../toast";
 import TagInput from "../components/TagInput";
 import ThumbnailPreview from "../components/ThumbnailPreview";
 import ScreenshotPreviewList from "../components/ScreenshotPreviewList";
@@ -160,11 +161,11 @@ export default function Upload() {
   async function submit() {
     const apiKey = getApiKey();
     if (!apiKey) {
-      setStatus({ kind: "error", message: "Set your API key in Settings first" });
+      toast.error("Set your API key in Settings first");
       return;
     }
     if (!filePath) {
-      setStatus({ kind: "error", message: "Pick a mod file first" });
+      toast.error("Pick a mod file first");
       return;
     }
 
@@ -172,14 +173,16 @@ export default function Upload() {
     try {
       const bytes = await readFileBytes(filePath);
       if (bytes.length === 0) {
-        setStatus({ kind: "error", message: `'${filePath}' is empty (0 bytes) — pick a different file` });
+        toast.error(`'${filePath}' is empty (0 bytes) — pick a different file`);
+        setStatus({ kind: "idle" });
         return;
       }
       const fileName = filePath.split(/[\\/]/).pop() ?? "mod";
 
       if (mode === "new") {
         if (!newModForm.name || !newModForm.author || !newModForm.version) {
-          setStatus({ kind: "error", message: "Name, author, and version are required" });
+          toast.error("Name, author, and version are required");
+          setStatus({ kind: "idle" });
           return;
         }
         const screenshotUrls = newModForm.screenshotUrls
@@ -210,7 +213,8 @@ export default function Upload() {
         setFilePath(null);
       } else {
         if (!selectedModId || !updateVersion) {
-          setStatus({ kind: "error", message: "Pick a mod and a version number" });
+          toast.error("Pick a mod and a version number");
+          setStatus({ kind: "idle" });
           return;
         }
         const result = await addModVersion(
@@ -227,7 +231,8 @@ export default function Upload() {
         setFilePath(null);
       }
     } catch (e) {
-      setStatus({ kind: "error", message: String(e) });
+      toast.error(String(e));
+      setStatus({ kind: "idle" });
     }
   }
 
@@ -350,7 +355,7 @@ export default function Upload() {
             {status.kind === "working" && <span className="spinner" />}
             {status.kind === "working" ? "Uploading…" : "Upload"}
           </button>
-          {status.message && <p className={`fade-in ${status.kind === "error" ? "error" : "muted"}`}>{status.message}</p>}
+          {status.kind === "done" && status.message && <p className="fade-in muted">{status.message}</p>}
         </div>
       </div>
     </div>

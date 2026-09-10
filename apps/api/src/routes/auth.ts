@@ -3,6 +3,7 @@ import type { Env } from "../env";
 import { authenticate, hashToken } from "../auth";
 import { hashPassword, verifyPassword } from "../passwords";
 import { checkRateLimit, clientIp } from "../rateLimit";
+import { getSetting } from "../appSettings";
 
 export const auth = new Hono<{ Bindings: Env }>();
 
@@ -42,6 +43,10 @@ const LOGIN_LIMIT = 8;
 const LOGIN_WINDOW_SECONDS = 5 * 60;
 
 auth.post("/signup", async (c) => {
+  if (await getSetting(c.env, "signups_disabled")) {
+    return c.json({ error: "signups_disabled", message: "New account signups are temporarily disabled." }, 423);
+  }
+
   const allowed = await checkRateLimit(c, "signup", clientIp(c), SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many accounts created from this connection — try again later" }, 429);
 

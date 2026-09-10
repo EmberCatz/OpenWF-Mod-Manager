@@ -1,25 +1,35 @@
 import { useEffect, useState } from "react";
 import {
+  banIp,
   banUser,
   deleteUserAdmin,
   dismissReport,
   fetchAdminReports,
   fetchAdminUsers,
+  fetchBannedIps,
+  fetchSiteSettings,
+  killAllSessions,
   resolveReport,
+  unbanIp,
   unbanUser,
+  updateSiteSettings,
   type AdminReport,
   type AdminUser,
+  type BannedIp,
+  type SiteSettings,
 } from "../api";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
 import { TrashIcon } from "../icons";
+import { toast } from "../toast";
 
-type Section = "users" | "reports";
+type Section = "users" | "reports" | "controls";
 type ReportFilter = "open" | "resolved" | "dismissed" | "all";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "reports", label: "Reports" },
+  { id: "controls", label: "Site Controls" },
 ];
 
 // Gated on account.isAdmin at the App.tsx tab level, but every action here
@@ -49,8 +59,10 @@ export default function Admin() {
           <p className="muted">Log in from Settings first.</p>
         ) : section === "users" ? (
           <UsersPanel apiKey={apiKey} selfId={account?.id} />
-        ) : (
+        ) : section === "reports" ? (
           <ReportsPanel apiKey={apiKey} />
+        ) : (
+          <SiteControlsPanel apiKey={apiKey} />
         )}
       </div>
     </div>
@@ -76,13 +88,12 @@ function UsersPanel({ apiKey, selfId }: { apiKey: string; selfId?: string }) {
 
   async function handleBanToggle(user: AdminUser) {
     setBusyId(user.id);
-    setError(null);
     try {
       if (user.isBanned) await unbanUser(user.id, apiKey);
       else await banUser(user.id, apiKey);
       setUsers((u) => u.map((x) => (x.id === user.id ? { ...x, isBanned: !x.isBanned } : x)));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusyId(null);
     }
@@ -90,13 +101,12 @@ function UsersPanel({ apiKey, selfId }: { apiKey: string; selfId?: string }) {
 
   async function handleDelete(userId: string) {
     setBusyId(userId);
-    setError(null);
     try {
       await deleteUserAdmin(userId, apiKey);
       setUsers((u) => u.filter((x) => x.id !== userId));
       setConfirmingDeleteId(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusyId(null);
     }
@@ -171,6 +181,230 @@ function UsersPanel({ apiKey, selfId }: { apiKey: string; selfId?: string }) {
   );
 }
 
+const TOGGLES: { field: keyof SiteSettings; label: string; description: string }[] = [
+  {
+    field: "maintenanceMode",
+    label: "Maintenance mode",
+    description: "Blocks all API access for everyone except admins. Emergencies only — nobody can browse, log in (except you), upload, comment, or rate while this is on.",
+  },
+  {
+    field: "uploadsDisabled",
+    label: "Disable uploads",
+    description: "Blocks new mod uploads and new version uploads for everyone except admins.",
+  },
+  {
+    field: "signupsDisabled",
+    label: "Disable new signups",
+    description: "Blocks new account creation app-wide.",
+  },
+  {
+    field: "commentsDisabled",
+    label: "Disable comments & ratings",
+    description: "Blocks new comments and star ratings app-wide.",
+  },
+];
+
+function SiteControlsPanel({ apiKey }: { apiKey: string }) {
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [confirmingField, setConfirmingField] = useState<keyof SiteSettings | null>(null);
+  const [confirmingKillSessions, setConfirmingKillSessions] = useState(false);
+
+  const [bannedIps, setBannedIps] = useState<BannedIp[]>([]);
+  const [ipsLoading, setIpsLoading] = useState(true);
+  const [newIp, setNewIp] = useState("");
+  const [newIpReason, setNewIpReason] = useState("");
+
+  useEffect(() => {
+    fetchSiteSettings(apiKey)
+      .then(setSettings)
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, [apiKey]);
+
+  useEffect(() => {
+    fetchBannedIps(apiKey)
+      .then(setBannedIps)
+      .catch((e) => toast.error(String(e)))
+      .finally(() => setIpsLoading(false));
+  }, [apiKey]);
+
+  async function applySetting(field: keyof SiteSettings, value: boolean) {
+    setBusyKey(field);
+    try {
+      const updated = await updateSiteSettings({ [field]: value }, apiKey);
+      setSettings(updated);
+      setConfirmingField(null);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleKillSessions() {
+    setBusyKey("kill-sessions");
+    try {
+      const { killedCount } = await killAllSessions(apiKey);
+      toast.success(`Logged out ${killedCount} session${killedCount === 1 ? "" : "s"}.`);
+      setConfirmingKillSessions(false);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleBanIp() {
+    const ip = newIp.trim();
+    if (!ip) return;
+    setBusyKey("ban-ip");
+    try {
+      await banIp(ip, newIpReason.trim(), apiKey);
+      setNewIp("");
+      setNewIpReason("");
+      setBannedIps(await fetchBannedIps(apiKey));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleUnbanIp(ip: string) {
+    setBusyKey(`unban-${ip}`);
+    try {
+      await unbanIp(ip, apiKey);
+      setBannedIps((ips) => ips.filter((x) => x.ip !== ip));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  if (loading) return <p><span className="spinner" /> Loading site controls…</p>;
+  if (error || !settings) return <p className="error">{error ?? "failed to load"}</p>;
+
+  return (
+    <div>
+      <h4 className="sidebar-section__title">Kill-switches</h4>
+      <p className="hint">
+        Each switch blocks the relevant action for everyone except admins. Turning one back off restores normal
+        service immediately.
+      </p>
+      <ul className="site-control-list">
+        {TOGGLES.map(({ field, label, description }) => {
+          const active = settings[field];
+          const busy = busyKey === field;
+          return (
+            <li key={field} className="site-control-row">
+              <div>
+                <strong>{label}</strong>
+                {active && <span className="badge badge--installed">Active</span>}
+                <p className="hint">{description}</p>
+              </div>
+              <div className="field__row">
+                {active ? (
+                  <button className="button" disabled={busy} onClick={() => applySetting(field, false)}>
+                    {busy && <span className="spinner" />} Disable
+                  </button>
+                ) : confirmingField === field ? (
+                  <>
+                    <button className="button button--danger" disabled={busy} onClick={() => applySetting(field, true)}>
+                      {busy && <span className="spinner" />} Confirm enable
+                    </button>
+                    <button className="button" onClick={() => setConfirmingField(null)}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button className="button button--danger" onClick={() => setConfirmingField(field)}>
+                    Enable
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      <h4 className="sidebar-section__title site-control-section-title">Danger zone</h4>
+      <ul className="site-control-list">
+        <li className="site-control-row">
+          <div>
+            <strong>Kill all sessions</strong>
+            <p className="hint">Force-logs-out every account immediately — for a suspected leaked-credential/compromise scenario.</p>
+          </div>
+          <div className="field__row">
+            {confirmingKillSessions ? (
+              <>
+                <button className="button button--danger" disabled={busyKey === "kill-sessions"} onClick={handleKillSessions}>
+                  {busyKey === "kill-sessions" && <span className="spinner" />} Confirm
+                </button>
+                <button className="button" onClick={() => setConfirmingKillSessions(false)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button className="button button--danger" onClick={() => setConfirmingKillSessions(true)}>
+                <TrashIcon className="btn-icon" /> Kill all sessions
+              </button>
+            )}
+          </div>
+        </li>
+      </ul>
+
+      <h4 className="sidebar-section__title site-control-section-title">Banned IPs</h4>
+      <p className="hint">
+        Blocks an IP from the API entirely, regardless of account — catches abuse from anonymous/throwaway accounts a
+        user ban can't touch (comments, ratings, reports have no account concept at all).
+      </p>
+      <div className="field__row">
+        <input type="text" placeholder="IP address" value={newIp} onChange={(e) => setNewIp(e.target.value)} />
+        <input type="text" placeholder="Reason (optional)" value={newIpReason} onChange={(e) => setNewIpReason(e.target.value)} />
+        <button className="button button--danger" disabled={!newIp.trim() || busyKey === "ban-ip"} onClick={handleBanIp}>
+          {busyKey === "ban-ip" && <span className="spinner" />} Ban IP
+        </button>
+      </div>
+      {ipsLoading ? (
+        <p>
+          <span className="spinner" /> Loading banned IPs…
+        </p>
+      ) : bannedIps.length === 0 ? (
+        <p className="muted">No IPs banned.</p>
+      ) : (
+        <table className="admin-table site-control-ip-table">
+          <thead>
+            <tr>
+              <th>IP</th>
+              <th>Reason</th>
+              <th>Banned</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {bannedIps.map((b) => (
+              <tr key={b.ip}>
+                <td>{b.ip}</td>
+                <td className="muted">{b.reason ?? "—"}</td>
+                <td className="muted">{new Date(b.bannedAt).toLocaleDateString()}</td>
+                <td>
+                  <button className="button" disabled={busyKey === `unban-${b.ip}`} onClick={() => handleUnbanIp(b.ip)}>
+                    Unban
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 const REPORT_FILTERS: ReportFilter[] = ["open", "resolved", "dismissed", "all"];
 
 function ReportsPanel({ apiKey }: { apiKey: string }) {
@@ -196,7 +430,7 @@ function ReportsPanel({ apiKey }: { apiKey: string }) {
       await resolveReport(id, apiKey);
       setReports((r) => r.filter((x) => x.id !== id));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusyId(null);
     }
@@ -208,7 +442,7 @@ function ReportsPanel({ apiKey }: { apiKey: string }) {
       await dismissReport(id, apiKey);
       setReports((r) => r.filter((x) => x.id !== id));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusyId(null);
     }

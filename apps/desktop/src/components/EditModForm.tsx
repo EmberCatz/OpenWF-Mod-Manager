@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Mod, ModWithVersions } from "@openwf-mod-manager/shared";
 import { updateMod } from "../api";
+import { toast } from "../toast";
 import ThumbnailPreview from "./ThumbnailPreview";
 import ScreenshotPreviewList from "./ScreenshotPreviewList";
 import TagInput from "./TagInput";
@@ -24,7 +25,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
   const [thumbnailPosition, setThumbnailPosition] = useState(mod.thumbnailPosition);
   const [screenshotUrlsText, setScreenshotUrlsText] = useState(mod.screenshotUrls.join("\n"));
   const [tags, setTags] = useState(mod.tags);
-  const [status, setStatus] = useState<{ kind: "idle" | "working" | "error"; message?: string }>({ kind: "idle" });
+  const [status, setStatus] = useState<{ kind: "idle" | "working" | "error" }>({ kind: "idle" });
 
   const previewScreenshotUrls = screenshotUrlsText
     .split("\n")
@@ -33,7 +34,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
 
   async function save() {
     if (!name.trim()) {
-      setStatus({ kind: "error", message: "Name can't be empty" });
+      toast.error("Name can't be empty");
       return;
     }
     setStatus({ kind: "working" });
@@ -52,7 +53,8 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
       );
       onSaved(updated);
     } catch (e) {
-      setStatus({ kind: "error", message: String(e) });
+      toast.error(String(e));
+      setStatus({ kind: "idle" });
     }
   }
 
@@ -90,7 +92,6 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
           Cancel
         </button>
       </div>
-      {status.kind === "error" && <p className="error">{status.message}</p>}
     </div>
   );
 }

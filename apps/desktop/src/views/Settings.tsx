@@ -11,9 +11,10 @@ import {
 import { deleteAccount, login, logout, signup } from "../api";
 import { useAccount } from "../useAccount";
 import { TrashIcon } from "../icons";
+import { toast } from "../toast";
 
 type AuthMode = "login" | "signup";
-type AuthStatus = { kind: "idle" | "working" | "error"; message?: string };
+type AuthStatus = { kind: "idle" | "working" };
 type Section = "folders" | "account" | "about";
 
 const SECTIONS: { id: Section; label: string }[] = [
@@ -56,7 +57,8 @@ export default function Settings() {
       setAuthPassword("");
       setAuthStatus({ kind: "idle" });
     } catch (e) {
-      setAuthStatus({ kind: "error", message: String(e) });
+      toast.error(String(e));
+      setAuthStatus({ kind: "idle" });
     }
   }
 
@@ -79,7 +81,8 @@ export default function Settings() {
       setConfirmingDelete(false);
       setAuthStatus({ kind: "idle" });
     } catch (e) {
-      setAuthStatus({ kind: "error", message: String(e) });
+      toast.error(String(e));
+      setAuthStatus({ kind: "idle" });
     }
   }
 
@@ -166,7 +169,6 @@ export default function Settings() {
                       </button>
                       <button className="button" onClick={() => setConfirmingDelete(false)}>Cancel</button>
                     </div>
-                    {authStatus.kind === "error" && <p className="error">{authStatus.message}</p>}
                   </>
                 )}
               </div>
@@ -186,7 +188,6 @@ export default function Settings() {
                   {authStatus.kind === "working" && <span className="spinner" />}
                   {authMode === "signup" ? "Sign up" : "Log in"}
                 </button>
-                {authStatus.kind === "error" && <p className="error">{authStatus.message}</p>}
                 <p className="hint">
                   We store your username and a salted hash of your password — never the password itself. Delete your
                   account any time above.

@@ -3,6 +3,7 @@ import type { Mod, ModWithVersions } from "@openwf-mod-manager/shared";
 import { deleteMod, deleteModVersion, fetchMyMods } from "../api";
 import { getApiKey } from "../settings";
 import { TrashIcon } from "../icons";
+import { toast } from "../toast";
 import EditModForm from "../components/EditModForm";
 
 // "Mine" resolves through whatever's in Settings — a self-service account
@@ -39,7 +40,7 @@ export default function MyMods() {
       setMods((m) => m.filter((mod) => mod.id !== modId));
       setConfirmingModId(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusyKey(null);
     }
@@ -58,7 +59,7 @@ export default function MyMods() {
       await deleteModVersion(modId, version, apiKey);
       setMods((m) => m.map((mod) => (mod.id === modId ? { ...mod, versions: mod.versions.filter((v) => v.version !== version) } : mod)));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusyKey(null);
     }
