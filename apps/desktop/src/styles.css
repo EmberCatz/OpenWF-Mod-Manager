@@ -1539,6 +1539,31 @@ body {
   margin-top: 0.75rem;
 }
 
+/* --- Live iframe tabs (Live Settings, Server WebUI — shared LiveIframePanel) --- */
+
+.live-iframe-frame {
+  display: block;
+  width: 100%;
+  height: 75vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* Both embedded pages (Bootstrapper, SpaceNinjaServer WebUI) are already
+     dark-themed and close to this app's own palette — this just avoids a
+     white flash while the page loads, not a full re-theme. */
+  background: var(--panel);
+}
+
+.live-iframe-offline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
 .admin-reports {
   list-style: none;
   margin: 0.75rem 0 0;

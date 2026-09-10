@@ -7,7 +7,37 @@ const KEYS = {
   scriptsPath: "owmm.scriptsPath",
   apiKey: "owmm.apiKey",
   commenterName: "owmm.commenterName",
+  bootstrapperPort: "owmm.bootstrapperPort",
+  webuiPort: "owmm.webuiPort",
+  liveSettingsTabEnabled: "owmm.liveSettingsTabEnabled",
+  serverWebuiTabEnabled: "owmm.serverWebuiTabEnabled",
 } as const;
+
+// The OpenWF Bootstrapper's own HTTP interface (client_http_port in
+// OpenWF/Client Config.json) — defaults to 6155, but is user-configurable
+// there, so the Live Settings tab (views/LiveSettings.tsx) needs to know
+// which port to point its iframe at.
+export const DEFAULT_BOOTSTRAPPER_PORT = 6155;
+
+// A self-hosted SpaceNinjaServer's admin WebUI (see
+// https://about.openwf.io/web-server-setup) — a different, unrelated tool
+// from the Bootstrapper above, used by views/ServerWebUI.tsx.
+export const DEFAULT_WEBUI_PORT = 80;
+
+// Tiny pub/sub, same shape as toast.ts's — App.tsx needs to know when a tab
+// visibility toggle changes so it can re-filter its tab list immediately,
+// without a full app restart.
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
+function emitChange(): void {
+  listeners.forEach((l) => l());
+}
+
+export function subscribeSettings(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 export function getMetadataPatchesPath(): string | null {
   return localStorage.getItem(KEYS.metadataPatchesPath);
@@ -31,6 +61,46 @@ export function getApiKey(): string | null {
 
 export function setApiKey(key: string): void {
   localStorage.setItem(KEYS.apiKey, key);
+}
+
+export function getBootstrapperPort(): number {
+  const raw = localStorage.getItem(KEYS.bootstrapperPort);
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_BOOTSTRAPPER_PORT;
+}
+
+export function setBootstrapperPort(port: number): void {
+  localStorage.setItem(KEYS.bootstrapperPort, String(port));
+}
+
+export function getWebuiPort(): number {
+  const raw = localStorage.getItem(KEYS.webuiPort);
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_WEBUI_PORT;
+}
+
+export function setWebuiPort(port: number): void {
+  localStorage.setItem(KEYS.webuiPort, String(port));
+}
+
+// Both tabs default to visible (shown unless a player opts out), so a
+// missing key means "on" rather than "off".
+export function isLiveSettingsTabEnabled(): boolean {
+  return localStorage.getItem(KEYS.liveSettingsTabEnabled) !== "0";
+}
+
+export function setLiveSettingsTabEnabled(enabled: boolean): void {
+  localStorage.setItem(KEYS.liveSettingsTabEnabled, enabled ? "1" : "0");
+  emitChange();
+}
+
+export function isServerWebuiTabEnabled(): boolean {
+  return localStorage.getItem(KEYS.serverWebuiTabEnabled) !== "0";
+}
+
+export function setServerWebuiTabEnabled(enabled: boolean): void {
+  localStorage.setItem(KEYS.serverWebuiTabEnabled, enabled ? "1" : "0");
+  emitChange();
 }
 
 // Remembered so the comment form doesn't ask for a name every time —

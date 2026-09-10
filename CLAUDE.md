@@ -30,3 +30,15 @@ content or accounts, think about whether it also needs:
 `is_admin` is never settable through any HTTP route — only via a script
 run directly against D1 by the operator. Don't add a route that sets it,
 even an "admin-only" one.
+
+## Local test/seed data — never commit unless told
+
+Scripts that generate or apply fake data for local scale-testing (e.g.
+`apps/api/scripts/seed-test-*.sql`, `cleanup-test-data.sql` — fake mods/
+accounts seeded into the local D1 for UI testing) should stay untracked.
+Leave them as-is on disk (they're genuinely useful to keep around for
+reuse), but don't `git add`/commit them as part of a broader commit, and
+don't stage them proactively — only if the user explicitly asks for that
+specific file to be committed. The same goes for any similar throwaway
+local-only fixture/scaffolding script created in the future: assume it
+stays out of git history unless told otherwise.

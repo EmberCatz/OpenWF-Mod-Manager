@@ -1,12 +1,22 @@
 import { useState } from "react";
 import { pickFolder } from "../native";
 import {
+  DEFAULT_BOOTSTRAPPER_PORT,
+  DEFAULT_WEBUI_PORT,
   getApiKey,
+  getBootstrapperPort,
   getMetadataPatchesPath,
   getScriptsPath,
+  getWebuiPort,
+  isLiveSettingsTabEnabled,
+  isServerWebuiTabEnabled,
   setApiKey,
+  setBootstrapperPort,
+  setLiveSettingsTabEnabled,
   setMetadataPatchesPath,
   setScriptsPath,
+  setServerWebuiTabEnabled,
+  setWebuiPort,
 } from "../settings";
 import { deleteAccount, login, logout, signup } from "../api";
 import { useAccount } from "../useAccount";
@@ -15,10 +25,11 @@ import { toast } from "../toast";
 
 type AuthMode = "login" | "signup";
 type AuthStatus = { kind: "idle" | "working" };
-type Section = "folders" | "account" | "about";
+type Section = "folders" | "live" | "account" | "about";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "folders", label: "Install Folders" },
+  { id: "live", label: "Live Tabs" },
   { id: "account", label: "Account" },
   { id: "about", label: "About / Disclaimer" },
 ];
@@ -28,6 +39,12 @@ export default function Settings() {
   const [metadataPatchesPath, setMetadataPatchesPathState] = useState(getMetadataPatchesPath() ?? "");
   const [scriptsPath, setScriptsPathState] = useState(getScriptsPath() ?? "");
   const [saved, setSaved] = useState(false);
+
+  const [bootstrapperPort, setBootstrapperPortState] = useState(String(getBootstrapperPort()));
+  const [webuiPort, setWebuiPortState] = useState(String(getWebuiPort()));
+  const [liveTabsSaved, setLiveTabsSaved] = useState(false);
+  const [liveSettingsEnabled, setLiveSettingsEnabledState] = useState(isLiveSettingsTabEnabled());
+  const [serverWebuiEnabled, setServerWebuiEnabledState] = useState(isServerWebuiTabEnabled());
 
   const { account, accountLoading, refreshAccount, setAccount } = useAccount();
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -46,6 +63,25 @@ export default function Settings() {
     setScriptsPath(scriptsPath);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  function saveLiveTabPorts() {
+    const bport = Number(bootstrapperPort);
+    setBootstrapperPort(Number.isInteger(bport) && bport > 0 ? bport : DEFAULT_BOOTSTRAPPER_PORT);
+    const wport = Number(webuiPort);
+    setWebuiPort(Number.isInteger(wport) && wport > 0 ? wport : DEFAULT_WEBUI_PORT);
+    setLiveTabsSaved(true);
+    setTimeout(() => setLiveTabsSaved(false), 2000);
+  }
+
+  function toggleLiveSettingsTab(enabled: boolean) {
+    setLiveSettingsEnabledState(enabled);
+    setLiveSettingsTabEnabled(enabled);
+  }
+
+  function toggleServerWebuiTab(enabled: boolean) {
+    setServerWebuiEnabledState(enabled);
+    setServerWebuiTabEnabled(enabled);
   }
 
   async function handleAuthSubmit() {
@@ -136,6 +172,61 @@ export default function Settings() {
 
             <button className="button button--primary" onClick={save}>Save</button>
             {saved && <span className="muted"> Saved.</span>}
+          </>
+        )}
+
+        {section === "live" && (
+          <>
+            <label className="field">
+              <span>Bootstrapper HTTP port</span>
+              <span className="hint">
+                Powers the Live Settings tab. Matches <code>client_http_port</code> in your{" "}
+                <code>OpenWF/Client Config.json</code> — only change this if you changed it there too.
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={bootstrapperPort}
+                onChange={(e) => setBootstrapperPortState(e.target.value.replace(/\D/g, ""))}
+                placeholder={String(DEFAULT_BOOTSTRAPPER_PORT)}
+              />
+            </label>
+
+            <label className="field">
+              <span>SpaceNinjaServer WebUI port</span>
+              <span className="hint">
+                Powers the Server WebUI tab — only relevant if you run a local SpaceNinjaServer private server.
+                Defaults to 80; use 443 if yours runs over HTTPS.
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={webuiPort}
+                onChange={(e) => setWebuiPortState(e.target.value.replace(/\D/g, ""))}
+                placeholder={String(DEFAULT_WEBUI_PORT)}
+              />
+            </label>
+
+            <button className="button button--primary" onClick={saveLiveTabPorts}>Save</button>
+            {liveTabsSaved && <span className="muted"> Saved.</span>}
+
+            <h4 className="sidebar-section__title" style={{ marginTop: "1.5rem" }}>Tab visibility</h4>
+            <label className="sidebar-checkbox">
+              <input
+                type="checkbox"
+                checked={liveSettingsEnabled}
+                onChange={(e) => toggleLiveSettingsTab(e.target.checked)}
+              />
+              Show the Live Settings tab
+            </label>
+            <label className="sidebar-checkbox">
+              <input
+                type="checkbox"
+                checked={serverWebuiEnabled}
+                onChange={(e) => toggleServerWebuiTab(e.target.checked)}
+              />
+              Show the Server WebUI tab
+            </label>
           </>
         )}
 
