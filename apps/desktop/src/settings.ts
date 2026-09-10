@@ -10,7 +10,8 @@ const KEYS = {
   bootstrapperPort: "owmm.bootstrapperPort",
   webuiPort: "owmm.webuiPort",
   liveSettingsTabEnabled: "owmm.liveSettingsTabEnabled",
-  serverWebuiTabEnabled: "owmm.serverWebuiTabEnabled",
+  splitViewEnabled: "owmm.splitViewEnabled",
+  liveWideModeEnabled: "owmm.liveWideModeEnabled",
 } as const;
 
 // The OpenWF Bootstrapper's own HTTP interface (client_http_port in
@@ -83,8 +84,8 @@ export function setWebuiPort(port: number): void {
   localStorage.setItem(KEYS.webuiPort, String(port));
 }
 
-// Both tabs default to visible (shown unless a player opts out), so a
-// missing key means "on" rather than "off".
+// Defaults to visible (shown unless a player opts out), so a missing key
+// means "on" rather than "off".
 export function isLiveSettingsTabEnabled(): boolean {
   return localStorage.getItem(KEYS.liveSettingsTabEnabled) !== "0";
 }
@@ -94,12 +95,27 @@ export function setLiveSettingsTabEnabled(enabled: boolean): void {
   emitChange();
 }
 
-export function isServerWebuiTabEnabled(): boolean {
-  return localStorage.getItem(KEYS.serverWebuiTabEnabled) !== "0";
+// Whether Live Settings shows Client WebUI and Server WebUI as one
+// side-by-side split view instead of two separate sub-tabs. Opt-in
+// (missing key means "off"), unlike the tab-visibility toggle above.
+export function isSplitViewEnabled(): boolean {
+  return localStorage.getItem(KEYS.splitViewEnabled) === "1";
 }
 
-export function setServerWebuiTabEnabled(enabled: boolean): void {
-  localStorage.setItem(KEYS.serverWebuiTabEnabled, enabled ? "1" : "0");
+export function setSplitViewEnabled(enabled: boolean): void {
+  localStorage.setItem(KEYS.splitViewEnabled, enabled ? "1" : "0");
+  emitChange();
+}
+
+// Whether Live Settings' WebUI panel(s) — single or split — break out of
+// the app's normal max-width column and stretch to the full window width.
+// Opt-in, same as split view.
+export function isLiveWideModeEnabled(): boolean {
+  return localStorage.getItem(KEYS.liveWideModeEnabled) === "1";
+}
+
+export function setLiveWideModeEnabled(enabled: boolean): void {
+  localStorage.setItem(KEYS.liveWideModeEnabled, enabled ? "1" : "0");
   emitChange();
 }
 

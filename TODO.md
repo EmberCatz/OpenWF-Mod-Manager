@@ -89,6 +89,32 @@ testing) rather than letting them evaporate.
 ## Ideas, not committed to yet
 - [ ] Auto-detect a likely Warframe install path instead of requiring manual
       folder selection in Settings
+- [ ] Collection/completion tracker (à la AlecaFrame) — a new tab showing
+      every Warframe/weapon/quest against what the player has actually
+      unlocked, with images, scoped to a self-hosted SpaceNinjaServer
+      private server only (not real DE accounts). Deliberately parked
+      until core UI/mod functionality is further along, not until it's
+      technically ready. Design notes from discussion:
+      - Full catalog + images: don't re-derive from raw Public Export —
+        reuse a maintained community dataset (WFCD's `warframe-items`,
+        `warframestat.us`) for names/categories/images, hotlinked at
+        runtime rather than bundled (same reasoning as not shipping
+        extracted game assets).
+      - Ownership data: pull from SpaceNinjaServer's own client-facing
+        HTTP API (the one the real game calls, e.g. an inventory route),
+        not its internal MongoDB — the API shape is what has to stay
+        stable for the game to keep working, Mongo's schema is a free-to-
+        change implementation detail. Needs a source-dive into
+        SpaceNinjaServer's own (open-source) repo to find the actual
+        endpoint name + auth flow, same kind of pass done against the
+        Bootstrapper's manual before building Dev Tools.
+      - Needs its own login/session step against SpaceNinjaServer,
+        separate from the Server WebUI tab's iframe (can't read across
+        that boundary) — same `@tauri-apps/plugin-http` + capability-
+        allowlist pattern already used for Dev Tools' Bootstrapper calls.
+      - Docker doesn't complicate reachability — the Server WebUI tab
+        already proves the container's HTTP port is published to the
+        host, same port a client-API integration would use.
 
 ## Known correctness gaps
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of

@@ -3,19 +3,17 @@ import Browse from "./views/Browse";
 import Upload from "./views/Upload";
 import MyMods from "./views/MyMods";
 import LiveSettings from "./views/LiveSettings";
-import ServerWebUI from "./views/ServerWebUI";
 import Admin from "./views/Admin";
 import Settings from "./views/Settings";
 import ToastHost from "./components/ToastHost";
 import { useAccount } from "./useAccount";
-import { isLiveSettingsTabEnabled, isServerWebuiTabEnabled, subscribeSettings } from "./settings";
+import { isLiveSettingsTabEnabled, subscribeSettings } from "./settings";
 
 const ALL_TABS = [
   { id: "browse", label: "Browse", view: Browse },
   { id: "upload", label: "Upload", view: Upload },
   { id: "my-mods", label: "My Mods", view: MyMods },
   { id: "live-settings", label: "Live Settings", view: LiveSettings },
-  { id: "server-webui", label: "Server WebUI", view: ServerWebUI },
   { id: "admin", label: "Admin", view: Admin },
   { id: "settings", label: "Settings", view: Settings },
 ] as const;
@@ -30,14 +28,13 @@ export default function App() {
   useEffect(() => subscribeSettings(() => setSettingsVersion((v) => v + 1)), []);
 
   // Admin only exists for accounts with is_admin set (see
-  // apps/api/scripts/grant-admin.mjs); Live Settings/Server WebUI can each
-  // be hidden individually in Settings → Live Tabs for players who don't
-  // want them cluttering the nav — filtered here rather than in every
-  // route/view.
+  // apps/api/scripts/grant-admin.mjs); Live Settings can be hidden entirely
+  // in Settings → Live Tabs for players who don't want it cluttering the
+  // nav (Server WebUI has its own visibility toggle as a sub-tab inside
+  // Live Settings — see views/LiveSettings.tsx).
   const tabs = ALL_TABS.filter((tab) => {
     if (tab.id === "admin") return !!account?.isAdmin;
     if (tab.id === "live-settings") return isLiveSettingsTabEnabled();
-    if (tab.id === "server-webui") return isServerWebuiTabEnabled();
     return true;
   });
   const ActiveView = (tabs.find((t) => t.id === activeTab) ?? tabs[0]).view;

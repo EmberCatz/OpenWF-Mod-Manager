@@ -9,13 +9,15 @@ import {
   getScriptsPath,
   getWebuiPort,
   isLiveSettingsTabEnabled,
-  isServerWebuiTabEnabled,
+  isLiveWideModeEnabled,
+  isSplitViewEnabled,
   setApiKey,
   setBootstrapperPort,
   setLiveSettingsTabEnabled,
+  setLiveWideModeEnabled,
   setMetadataPatchesPath,
   setScriptsPath,
-  setServerWebuiTabEnabled,
+  setSplitViewEnabled,
   setWebuiPort,
 } from "../settings";
 import { deleteAccount, login, logout, signup } from "../api";
@@ -44,7 +46,8 @@ export default function Settings() {
   const [webuiPort, setWebuiPortState] = useState(String(getWebuiPort()));
   const [liveTabsSaved, setLiveTabsSaved] = useState(false);
   const [liveSettingsEnabled, setLiveSettingsEnabledState] = useState(isLiveSettingsTabEnabled());
-  const [serverWebuiEnabled, setServerWebuiEnabledState] = useState(isServerWebuiTabEnabled());
+  const [splitViewEnabled, setSplitViewEnabledState] = useState(isSplitViewEnabled());
+  const [wideModeEnabled, setWideModeEnabledState] = useState(isLiveWideModeEnabled());
 
   const { account, accountLoading, refreshAccount, setAccount } = useAccount();
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -79,9 +82,14 @@ export default function Settings() {
     setLiveSettingsTabEnabled(enabled);
   }
 
-  function toggleServerWebuiTab(enabled: boolean) {
-    setServerWebuiEnabledState(enabled);
-    setServerWebuiTabEnabled(enabled);
+  function toggleSplitView(enabled: boolean) {
+    setSplitViewEnabledState(enabled);
+    setSplitViewEnabled(enabled);
+  }
+
+  function toggleWideMode(enabled: boolean) {
+    setWideModeEnabledState(enabled);
+    setLiveWideModeEnabled(enabled);
   }
 
   async function handleAuthSubmit() {
@@ -195,8 +203,8 @@ export default function Settings() {
             <label className="field">
               <span>SpaceNinjaServer WebUI port</span>
               <span className="hint">
-                Powers the Server WebUI tab — only relevant if you run a local SpaceNinjaServer private server.
-                Defaults to 80; use 443 if yours runs over HTTPS.
+                Powers the Server WebUI sub-tab under Live Settings — only relevant if you run a local
+                SpaceNinjaServer private server. Defaults to 80; use 443 if yours runs over HTTPS.
               </span>
               <input
                 type="text"
@@ -210,7 +218,13 @@ export default function Settings() {
             <button className="button button--primary" onClick={saveLiveTabPorts}>Save</button>
             {liveTabsSaved && <span className="muted"> Saved.</span>}
 
-            <h4 className="sidebar-section__title" style={{ marginTop: "1.5rem" }}>Tab visibility</h4>
+            <p className="hint" style={{ marginTop: "1rem" }}>
+              <strong>Security note:</strong> both interfaces trust anything that can reach the
+              port — that's fine on localhost, but never port-forward or expose either one to your
+              LAN or the internet, since neither is hardened against untrusted callers.
+            </p>
+
+            <h4 className="sidebar-section__title" style={{ marginTop: "1.5rem" }}>Options</h4>
             <label className="sidebar-checkbox">
               <input
                 type="checkbox"
@@ -222,10 +236,18 @@ export default function Settings() {
             <label className="sidebar-checkbox">
               <input
                 type="checkbox"
-                checked={serverWebuiEnabled}
-                onChange={(e) => toggleServerWebuiTab(e.target.checked)}
+                checked={splitViewEnabled}
+                onChange={(e) => toggleSplitView(e.target.checked)}
               />
-              Show the Server WebUI tab
+              View Client WebUI and Server WebUI side by side (split screen)
+            </label>
+            <label className="sidebar-checkbox">
+              <input
+                type="checkbox"
+                checked={wideModeEnabled}
+                onChange={(e) => toggleWideMode(e.target.checked)}
+              />
+              Expand the WebUI panel(s) to the full window width
             </label>
           </>
         )}

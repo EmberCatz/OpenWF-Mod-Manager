@@ -11,7 +11,8 @@
         { "url": "https://*.workers.dev/*" },
         { "url": "https://github.com/*" },
         { "url": "https://objects.githubusercontent.com/*" },
-        { "url": "https://release-assets.githubusercontent.com/*" }
+        { "url": "https://release-assets.githubusercontent.com/*" },
+        { "url": "http://localhost:*/*" }
       ]
     },
     "dialog:default"

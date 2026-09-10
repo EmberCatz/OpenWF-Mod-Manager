@@ -1,25 +1,50 @@
+/* Warframe-inspired palette: warm amber/gold accent (Tenno UI orange)
+   instead of a generic blue, on a near-black neutral background — with a
+   condensed technical font for headings/tabs/buttons for the HUD feel.
+   Original, not extracted game assets — see CLAUDE.md's disclaimer text
+   in Settings for why. */
 :root {
   color-scheme: dark;
-  --bg: #16181d;
-  --panel: #1e2129;
-  --panel-alt: #262a34;
-  --text: #e6e6e6;
-  --muted: #9aa0a8;
-  --accent: #5b8cff;
-  --border: #2c303a;
+  --bg: #101214;
+  --panel: #191c20;
+  --panel-alt: #23272e;
+  --text: #e9e4d8;
+  --muted: #9c968a;
+  --accent: #e0a339;
+  --accent-hover: #f2bd5c;
+  --accent-ink: #1a1206;
+  --border: #2b2f35;
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Rajdhani", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 500;
+  /* .live-wide (Live Settings' "wide mode") deliberately overflows its
+     max-width ancestor by exactly the viewport width — sub-pixel rounding
+     against the scrollbar gutter can occasionally push that a hair past
+     100%, so this clips the stray sliver instead of showing a permanent
+     horizontal scrollbar. Nothing else in the app relies on horizontal
+     overflow (wide tables/code blocks scroll via their own container). */
+  overflow-x: hidden;
 }
 
 .app {
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem 2rem;
+}
+
+.app > h1 {
+  margin: 0 0 1.25rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  border-left: 4px solid var(--accent);
+  padding-left: 0.65rem;
 }
 
 /* Shared breakpoint every side-by-side layout below collapses at
@@ -33,6 +58,15 @@ body {
   .settings-nav {
     flex-direction: row !important;
     overflow-x: auto;
+  }
+  .live-split-view {
+    flex-direction: column;
+    height: auto;
+  }
+  .live-split-view__pane .live-iframe-frame,
+  .live-split-view__pane .live-iframe-offline {
+    height: 60vh;
+    flex: none;
   }
 }
 
@@ -100,6 +134,9 @@ body {
   color: var(--muted);
   padding: 0.5rem 0.9rem;
   font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: color 0.15s ease, border-color 0.15s ease;
@@ -121,6 +158,9 @@ body {
   border-radius: 6px;
   padding: 0.4rem 0.9rem;
   font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
 }
@@ -142,25 +182,25 @@ body {
 .button--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
 .button--primary:hover:not(:disabled) {
-  background: #7ba0ff;
-  border-color: #7ba0ff;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .button--reinstall {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
 .button--reinstall:hover:not(:disabled) {
-  background: #7ba0ff;
-  border-color: #7ba0ff;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .button--danger {
@@ -357,7 +397,7 @@ body {
 
 .badge--tag:hover {
   background: var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
 }
 
 .mod-card__tags {
@@ -392,7 +432,7 @@ body {
 .tag-filter__chip--active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
@@ -594,7 +634,10 @@ body {
   color: var(--muted);
   text-align: left;
   padding: 0.5rem 0.7rem;
-  font-size: 0.88rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
@@ -856,7 +899,7 @@ body {
 
 .view-toggle__btn--active {
   background: var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
 }
 
 .view-toggle__btn .btn-icon {
@@ -1135,7 +1178,7 @@ body {
   min-width: 0;
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0.5rem 0.6rem;
@@ -1163,7 +1206,7 @@ body {
   background: var(--accent);
   border: 1px solid var(--accent);
   border-left: 1px solid rgba(0, 0, 0, 0.2);
-  color: #0b1020;
+  color: var(--accent-ink);
   width: 1.8rem;
   cursor: pointer;
   border-radius: 0 6px 6px 0;
@@ -1496,7 +1539,7 @@ body {
 
 .admin-badge--admin {
   background: var(--accent);
-  color: #0b1020;
+  color: var(--accent-ink);
 }
 
 .admin-badge--banned {
@@ -1539,7 +1582,86 @@ body {
   margin-top: 0.75rem;
 }
 
-/* --- Live iframe tabs (Live Settings, Server WebUI — shared LiveIframePanel) --- */
+/* --- Bootstrapper Dev Tools (Live Settings → Dev Tools sub-tab) --- */
+
+.dev-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 900px;
+}
+
+.dev-tools-warning {
+  background: #3a2e1a;
+  border: 1px solid #6e5a2f;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #f0d9a8;
+}
+
+.dev-tools-warning__link {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8rem;
+  color: var(--accent-hover);
+  user-select: all;
+}
+
+.dev-tools-group__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dev-tools-group__hints {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.dev-tools-group .field__row {
+  margin-top: 0.4rem;
+}
+
+.dev-tools-group .field__row input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.dev-tools-result {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.dev-tools-result__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.dev-tools-result__body {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  background: #101216;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- Live iframe sub-tabs (Live Settings: Client WebUI, Server WebUI — shared LiveIframePanel) --- */
 
 .live-iframe-frame {
   display: block;
@@ -1553,6 +1675,59 @@ body {
   background: var(--panel);
 }
 
+/* --- Live Settings: wide mode (breaks the WebUI panel(s) out of .app's
+   max-width column to the full window width) ---
+
+   Standard CSS "full-bleed" trick rather than a React portal: left:50% is
+   resolved against the parent's own (narrow, centered) width, and
+   margin-left:-50vw is resolved against the actual viewport — the two
+   cancel out algebraically regardless of .app's max-width/padding, so the
+   element's left edge always lands exactly at the window edge without
+   needing to relocate it in the DOM. Stays in normal document flow (right
+   where the sub-tabs put it, scrolls with the page) unlike position:fixed,
+   which would need manual math to sit in the right place. */
+.live-wide {
+  width: 100vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  padding: 0 1.5rem;
+  box-sizing: border-box;
+}
+
+/* --- Live Settings: split view (both WebUIs side by side) --- */
+
+.live-split-view {
+  display: flex;
+  gap: 1rem;
+  align-items: stretch;
+  /* Same height as a single standalone WebUI tab (.live-iframe-frame's
+     75vh below) — one reference so switching split view on/off doesn't
+     change how much of the window the WebUIs occupy. */
+  height: 75vh;
+}
+
+.live-split-view__pane {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.live-split-view__pane .live-iframe-frame,
+.live-split-view__pane .live-iframe-offline {
+  /* Fills whatever's left of the pane below its heading, instead of each
+     state (connected iframe vs. offline message) sizing itself — padding
+     on .live-iframe-offline would otherwise make it taller than the plain
+     iframe at the same height value. */
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  box-sizing: border-box;
+}
+
 .live-iframe-offline {
   display: flex;
   flex-direction: column;
@@ -1562,6 +1737,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1.5rem;
+  overflow-y: auto;
 }
 
 .admin-reports {
