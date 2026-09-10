@@ -29,6 +29,9 @@ Thumbs.db
 CLAUDE.local.md
 **/.claude/settings.local.json
 
+# Private operational notes not meant for the public repo
+ADMIN.local.md
+
 # Logs
 *.log
 npm-debug.log*

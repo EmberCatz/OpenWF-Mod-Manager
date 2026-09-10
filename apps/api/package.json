@@ -10,6 +10,7 @@
     "db:init:remote": "wrangler d1 execute openwf-mod-manager --remote --file=./schema.sql",
     "typecheck": "tsc --noEmit",
     "modder:create": "node scripts/create-modder.mjs",
+    "modder:set-password": "node scripts/set-password.mjs",
     "modder:grant-admin": "node scripts/grant-admin.mjs",
     "reports:list": "wrangler d1 execute openwf-mod-manager --remote --command \"SELECT id, target_type, target_id, reason, created_at FROM reports WHERE status = 'open' ORDER BY created_at DESC\""
   },
