@@ -24,7 +24,7 @@ export const mods = new Hono<{ Bindings: Env }>();
 // bundles — real-world examples top out well under 1 MB. This cap is
 // generous headroom, not a sizing assumption; GitHub's own release-asset
 // limit is 2 GB, far beyond anything this project needs.
-const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_SCREENSHOTS = 10;
 const MAX_TAGS = 15;
 const MAX_TAG_LENGTH = 30;
