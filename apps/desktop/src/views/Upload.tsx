@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ModCategory, ModWithVersions } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
 import { addModVersion, fetchModList, uploadNewMod } from "../api";
-import { pickModFileToUpload, readFileBytes } from "../native";
+import { pickAndReadModFile } from "../native";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
 import { toast } from "../toast";
@@ -43,7 +43,7 @@ export default function Upload() {
   const [updateChangelog, setUpdateChangelog] = useState("");
   const [gameVersions, setGameVersions] = useState<string[]>([ALL_VERSIONS_TAG]);
 
-  const [filePath, setFilePath] = useState<string | null>(null);
+  const [pickedFile, setPickedFile] = useState<{ fileName: string; bytes: Uint8Array } | null>(null);
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "error"; message?: string }>({ kind: "idle" });
 
   useEffect(() => {
@@ -73,8 +73,13 @@ export default function Upload() {
     .filter(Boolean);
 
   async function pickFile() {
-    const path = await pickModFileToUpload();
-    if (path) setFilePath(path);
+    const picked = await pickAndReadModFile();
+    if (!picked) return;
+    if (picked.bytes.length === 0) {
+      toast.error(`'${picked.fileName}' is empty (0 bytes) — pick a different file`);
+      return;
+    }
+    setPickedFile(picked);
   }
 
   async function submit() {
@@ -83,20 +88,14 @@ export default function Upload() {
       toast.error("Set your API key in Settings first");
       return;
     }
-    if (!filePath) {
+    if (!pickedFile) {
       toast.error("Pick a mod file first");
       return;
     }
 
     setStatus({ kind: "working" });
     try {
-      const bytes = await readFileBytes(filePath);
-      if (bytes.length === 0) {
-        toast.error(`'${filePath}' is empty (0 bytes) — pick a different file`);
-        setStatus({ kind: "idle" });
-        return;
-      }
-      const fileName = filePath.split(/[\\/]/).pop() ?? "mod";
+      const { fileName, bytes } = pickedFile;
 
       if (mode === "new") {
         if (!newModForm.name || !newModForm.version || !newModForm.theme) {
@@ -133,7 +132,7 @@ export default function Upload() {
         setStatus({ kind: "done", message: `Uploaded as '${result.id}'` });
         setNewModForm(initialNewModForm);
         setGameVersions([ALL_VERSIONS_TAG]);
-        setFilePath(null);
+        setPickedFile(null);
       } else {
         if (!selectedModId || !updateVersion) {
           toast.error("Pick a mod and a version number");
@@ -151,7 +150,7 @@ export default function Upload() {
         setUpdateVersion("1.0.0");
         setUpdateChangelog("");
         setGameVersions([ALL_VERSIONS_TAG]);
-        setFilePath(null);
+        setPickedFile(null);
       }
     } catch (e) {
       toast.error(String(e));
@@ -314,7 +313,7 @@ export default function Upload() {
               {status.kind === "working" ? "Uploading…" : "Upload"}
             </button>
           </div>
-          <span className="muted">{filePath ? filePath.split(/[\\/]/).pop() : "No file chosen"}</span>
+          <span className="muted">{pickedFile ? pickedFile.fileName : "No file chosen"}</span>
           {status.kind === "done" && status.message && <p className="fade-in muted">{status.message}</p>}
         </div>
       </div>

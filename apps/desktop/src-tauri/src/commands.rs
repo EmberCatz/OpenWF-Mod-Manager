@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use tauri_plugin_dialog::DialogExt;
 
 // The auth token (an API key or login session token) used to be kept in the
 // webview's localStorage, trivially readable by any script that ever runs
@@ -37,22 +38,69 @@ pub fn clear_api_key() -> Result<(), String> {
     }
 }
 
-// Both endpoints exist so the frontend never touches the filesystem
-// directly (Tauri's fs-plugin scope rules only cover paths granted through
-// its own APIs) — the user picks paths via the native dialog plugin, and
-// everything after that is a plain Rust command with normal OS file access.
+// These two commands used to be read_file_bytes/write_file_bytes, taking a
+// raw `path: String` argument straight from JS with no containment check —
+// any script running in the webview could invoke them with an arbitrary
+// path, not just one that came from a real native dialog (Tauri's IPC has
+// no per-origin ACL; capabilities gate which commands exist, not who calls
+// them). See docs/redteam-audit-2026-09.md §2.1. Fixed by merging "show the
+// dialog" and "read/write the picked file" into one atomic Rust-side
+// operation each — the picked path is used entirely on this side and never
+// crosses back into JS as a free string, so there's nothing left for a
+// compromised script to substitute its own value into. A script can still
+// trigger these commands, but that surfaces a real, visible native OS
+// dialog the user sees and can cancel, not a silent file operation.
 
-#[tauri::command]
-pub fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
-    fs::read(&path).map_err(|e| format!("failed to read '{path}': {e}"))
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedFile {
+    file_name: String,
+    bytes: Vec<u8>,
 }
 
+// Shows a native "open file" dialog (same filters Upload.tsx always used)
+// and reads the picked file in one step. Returns None if the user cancelled.
 #[tauri::command]
-pub fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
-    if let Some(parent) = Path::new(&path).parent() {
+pub async fn pick_and_read_mod_file(app: tauri::AppHandle) -> Result<Option<PickedFile>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Select a mod file to upload")
+        .add_filter("Mod file", &["pluto", "txt", "zip"])
+        .blocking_pick_file();
+
+    let Some(file_path) = picked else {
+        return Ok(None);
+    };
+
+    let path = file_path.into_path().map_err(|e| e.to_string())?;
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or_else(|| format!("picked file has no name: {}", path.display()))?;
+    let bytes = fs::read(&path).map_err(|e| format!("failed to read '{}': {e}", path.display()))?;
+
+    Ok(Some(PickedFile { file_name, bytes }))
+}
+
+// Shows a native "save file" dialog and writes bytes to wherever the user
+// picked in one step. Returns the path actually written to (for a "Saved
+// to X" confirmation), or None if the user cancelled.
+#[tauri::command]
+pub async fn pick_and_write_file(app: tauri::AppHandle, default_file_name: String, bytes: Vec<u8>) -> Result<Option<String>, String> {
+    let picked = app.dialog().file().set_file_name(&default_file_name).blocking_save_file();
+
+    let Some(file_path) = picked else {
+        return Ok(None);
+    };
+
+    let path = file_path.into_path().map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("failed to create '{}': {e}", parent.display()))?;
     }
-    fs::write(&path, bytes).map_err(|e| format!("failed to write '{path}': {e}"))
+    fs::write(&path, bytes).map_err(|e| format!("failed to write '{}': {e}", path.display()))?;
+
+    Ok(Some(path.display().to_string()))
 }
 
 // Installs a single raw file (.pluto / .txt) directly into target_dir under

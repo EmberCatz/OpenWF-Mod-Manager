@@ -8,8 +8,8 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            commands::read_file_bytes,
-            commands::write_file_bytes,
+            commands::pick_and_read_mod_file,
+            commands::pick_and_write_file,
             commands::install_mod_file,
             commands::install_mod_zip,
             commands::list_zip_text_entries,

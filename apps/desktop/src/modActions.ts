@@ -1,6 +1,6 @@
 import type { Mod, ModVersion } from "@openwf-mod-manager/shared";
 import { downloadModFile, recordDownload } from "./api";
-import { installModFile, installModZip, pickSaveLocation, uninstallFiles, writeFileBytes } from "./native";
+import { installModFile, installModZip, pickAndWriteFile, uninstallFiles } from "./native";
 import { getMetadataPatchesPath, getScriptsPath } from "./settings";
 import { clearInstalled, getInstalled, setInstalled } from "./installed";
 
@@ -51,11 +51,10 @@ export async function installVersion(mod: Mod, version: ModVersion): Promise<str
 // category mods (no defined install location) or deliberately grabbing
 // the raw file. Returns null if the user cancelled the save dialog.
 export async function downloadVersion(version: ModVersion): Promise<string | null> {
-  const savePath = await pickSaveLocation(version.fileName);
-  if (!savePath) return null;
   const bytes = await downloadModFile(version.downloadUrl);
+  const savedPath = await pickAndWriteFile(version.fileName, bytes);
+  if (!savedPath) return null;
   recordDownload(version.modId); // best-effort popularity counter, doesn't block the save
-  await writeFileBytes(savePath, bytes);
   return "Saved";
 }
 

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 
 // All filesystem work happens in Rust (src-tauri/src/commands.rs), not
 // through the JS fs plugin — the dialog plugin grants access to whatever
@@ -12,28 +12,29 @@ export async function pickFolder(title: string): Promise<string | null> {
   return typeof result === "string" ? result : null;
 }
 
-export async function pickModFileToUpload(): Promise<string | null> {
-  const result = await open({
-    directory: false,
-    multiple: false,
-    title: "Select a mod file to upload",
-    filters: [{ name: "Mod file", extensions: ["pluto", "txt", "zip"] }],
+interface PickedFile {
+  fileName: string;
+  bytes: number[];
+}
+
+// Shows the native "open file" dialog and reads the picked file, both on
+// the Rust side (see commands.rs's rationale) — the path never crosses
+// back into JS as a string, so there's nothing here for a compromised
+// script to redirect to an arbitrary file. Returns null if cancelled.
+export async function pickAndReadModFile(): Promise<{ fileName: string; bytes: Uint8Array } | null> {
+  const result = await invoke<PickedFile | null>("pick_and_read_mod_file");
+  if (!result) return null;
+  return { fileName: result.fileName, bytes: new Uint8Array(result.bytes) };
+}
+
+// Shows the native "save file" dialog and writes bytes to wherever the
+// user picked, both on the Rust side, same reasoning as above. Returns the
+// path actually written to, or null if cancelled.
+export async function pickAndWriteFile(defaultFileName: string, bytes: ArrayBuffer): Promise<string | null> {
+  return invoke<string | null>("pick_and_write_file", {
+    defaultFileName,
+    bytes: Array.from(new Uint8Array(bytes)),
   });
-  return typeof result === "string" ? result : null;
-}
-
-export async function pickSaveLocation(defaultFileName: string): Promise<string | null> {
-  const result = await save({ defaultPath: defaultFileName });
-  return result ?? null;
-}
-
-export async function readFileBytes(path: string): Promise<Uint8Array> {
-  const bytes = await invoke<number[]>("read_file_bytes", { path });
-  return new Uint8Array(bytes);
-}
-
-export async function writeFileBytes(path: string, bytes: ArrayBuffer): Promise<void> {
-  await invoke("write_file_bytes", { path, bytes: Array.from(new Uint8Array(bytes)) });
 }
 
 // Installs a single raw file (.pluto/.txt) directly into targetDir under

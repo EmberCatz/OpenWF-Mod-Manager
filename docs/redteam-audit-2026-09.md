@@ -10,7 +10,7 @@ Follow-up to [security-audit-2026-09.md](security-audit-2026-09.md) (steps 1–5
 |---|---|---|---|
 | 1 | Rate-limit bypass via TOCTOU race | **EXPLOITABLE** — **Fixed** | Medium (CVSS ~5.3) |
 | 2 | Unsniffed uploads → malware distribution via GitHub Releases | **EXPLOITABLE** — **Fixed** | Medium (CVSS ~6.5) |
-| 3 | Tauri file IPC (`read_file_bytes`/`write_file_bytes`/`uninstall_files`) lacks path confinement | Defense-in-depth gap — **no active trigger found** | High if ever triggered (CVSS ~7.8); currently not reachable |
+| 3 | Tauri file IPC (`read_file_bytes`/`write_file_bytes`) lacked path confinement | Defense-in-depth gap — **no active trigger found** — **Hardened** | High if ever triggered (CVSS ~7.8); was not reachable even before the fix |
 | — | IDOR on mod/version/account write routes | NOT EXPLOITABLE | — |
 | — | SQL injection | NOT EXPLOITABLE | — |
 | — | Comment vote race | NOT EXPLOITABLE (atomic DB upsert) | — |
@@ -152,7 +152,7 @@ This isn't a full antivirus scan (out of scope for a hobby-scale project per the
 
 ## 2. Defense-in-Depth Gap (Theoretical — No Active Trigger Found)
 
-### 2.1 Tauri file IPC lacks path confinement — High if triggered (CVSS ~7.8), currently not reachable
+### 2.1 Tauri file IPC lacks path confinement — High if triggered (CVSS ~7.8), was not reachable — Hardened
 
 **Location**: [`apps/desktop/src-tauri/src/commands.rs`](../apps/desktop/src-tauri/src/commands.rs) — `read_file_bytes` (line ~45), `write_file_bytes` (~50), `uninstall_files` (~175), plus `get_api_key`.
 
@@ -175,7 +175,9 @@ Because each has a single call site fed by a dialog result, the path never needs
 1. **Ideal**: merge "show the dialog" and "read/write the picked file" into one Rust-side command each (using `tauri-plugin-dialog`'s Rust API to show the dialog synchronously from within the command), so JS receives only bytes/a success result — never a path string it could substitute its own value into. This removes the free-path IPC surface for these two operations entirely.
 2. **Cheaper, still effective**: have the pick commands issue a short-lived, single-use capability token (a random string held in an in-memory `Mutex` on the Rust side) alongside the picked path; `read_file_bytes`/`write_file_bytes` require a matching, unexpired token. A compromised script could still trigger the dialog itself, but that surfaces a real, visible native OS file picker the user would see and could cancel — it can no longer silently read/write/delete arbitrary paths with no user-visible action at all.
 
-Neither is applied in this pass — this is a recommendation for a future hardening step, not an active fix, since nothing in the current codebase can actually reach it.
+**Applied — option 1 (the ideal fix)**: `read_file_bytes` and `write_file_bytes` are gone. In their place, `pick_and_read_mod_file` and `pick_and_write_file` (`commands.rs`) show the native Open/Save dialog *and* perform the read/write in one atomic Rust-side operation, using `tauri-plugin-dialog`'s Rust API (`DialogExt`, `blocking_pick_file`/`blocking_save_file`) rather than round-tripping a path through JS at all. The frontend (`native.ts`'s `pickAndReadModFile`/`pickAndWriteFile`, wired into `Upload.tsx` and `modActions.ts`'s `downloadVersion`) now gets back only bytes/a display name/a confirmation path — never a path it could substitute its own value into. A script can still trigger these commands, but doing so now surfaces a real, visible native OS dialog the user sees and can cancel, not a silent file operation. `uninstall_files` was left as-is: its only inputs are paths the app itself already returned from `install_mod_file`/`install_mod_zip`, tracked in `installed.ts`'s local state, not caller-supplied at the point of deletion in a way this refactor changes.
+
+Verified: `cargo check` and a full `cargo build` both succeed; `tsc --noEmit` and a full `vite build` both pass; grepped the whole frontend to confirm no stale references to the removed `readFileBytes`/`writeFileBytes`/`pickModFileToUpload`/`pickSaveLocation` remain. Not verified via an actual native file-picker interaction — no GUI available in this environment — so give Upload's "Choose file" and a mod's "Download" button a real try next time you're in the app.
 
 ---
 
@@ -196,6 +198,8 @@ Neither is applied in this pass — this is a recommendation for a future harden
 
 ## 4. Recommended Next Steps
 
-1. Apply the rate-limiter atomic-batch patch (§1.1) — small, self-contained, closes a real bypass affecting every rate-limited endpoint at once.
-2. Apply the upload content-sniffing patch (§1.2) — small, self-contained, closes the malware-hosting PoC.
-3. Decide whether the Tauri file-IPC hardening (§2.1) is worth the larger refactor now, given it's currently unreachable — reasonable to defer until either a markdown/rich-text feature is ever added (which would reopen the XSS question) or as routine defense-in-depth hygiene.
+1. ~~Apply the rate-limiter atomic-batch patch (§1.1)~~ — **Done.**
+2. ~~Apply the upload content-sniffing patch (§1.2)~~ — **Done.**
+3. ~~Tauri file-IPC hardening (§2.1)~~ — **Done.**
+
+All three findings from this pass are now addressed. Nothing outstanding from this audit as of this writing.
