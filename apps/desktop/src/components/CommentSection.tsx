@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Comment } from "@openwf-mod-manager/shared";
 import { deleteCommentAdmin, fetchComments, postComment, voteOnComment } from "../api";
 import { getApiKey, getCommenterName, setCommenterName } from "../settings";
@@ -152,6 +152,11 @@ export default function CommentSection({ modId }: { modId: string }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("newest");
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
+  // Per-comment request counter for handleVote — lets an in-flight vote
+  // request recognize it's been superseded by a newer click on the same
+  // comment, so a slow response can't land after a faster later one and
+  // clobber it back to a stale score/myVote (see handleVote below).
+  const voteSeqRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
     fetchComments(modId, getReviewerId())
@@ -210,14 +215,25 @@ export default function CommentSection({ modId }: { modId: string }) {
   async function handleVote(commentId: number, value: -1 | 0 | 1) {
     // Optimistic — voting is low-stakes and this keeps the arrows feeling
     // instant; a failure just restores the previous state (a reload would
-    // pick up the truth either way).
+    // pick up the truth either way). Guarded against out-of-order network
+    // responses: a rapid second vote on the same comment bumps its
+    // sequence number, so if the FIRST request's response (success or
+    // error) arrives after the second one fired, it recognizes it's stale
+    // and does nothing instead of clobbering the newer optimistic/
+    // confirmed state back to a value the user already moved past.
+    const seq = (voteSeqRef.current.get(commentId) ?? 0) + 1;
+    voteSeqRef.current.set(commentId, seq);
+    const isCurrent = () => voteSeqRef.current.get(commentId) === seq;
+
     const prev = comments;
     const prevVote = prev.find((c) => c.id === commentId)?.myVote ?? 0;
     setComments((cs) => cs.map((c) => (c.id === commentId ? { ...c, myVote: value, score: c.score - prevVote + value } : c)));
     try {
       const result = await voteOnComment(modId, commentId, getReviewerId(), value);
+      if (!isCurrent()) return;
       setComments((cs) => cs.map((c) => (c.id === commentId ? { ...c, score: result.score, myVote: result.myVote } : c)));
     } catch (e) {
+      if (!isCurrent()) return;
       setComments(prev);
       toast.error(String(e));
     }
