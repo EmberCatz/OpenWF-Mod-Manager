@@ -7,6 +7,13 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Real app icon — an ornate gem/flame emblem replacing the flat
+      placeholder square (`apps/desktop/src-tauri/icons/`, source kept as
+      `source.png` for regeneration via `tauri icon`). Also used as the
+      README logo (`.github/assets/logo.png`) and a GitHub repo social
+      preview banner (`.github/assets/social-preview.png` — needs manually
+      uploading under repo Settings → General → Social preview, no API
+      access to do that from here).
 - [x] Admin & moderation interface — an `is_admin` flag (grantable only via
       `apps/api/scripts/grant-admin.mjs`, never through any route), a
       hidden Admin tab (Users: ban/unban/delete; Reports: resolve/dismiss,
@@ -81,8 +88,6 @@ testing) rather than letting them evaporate.
 - [x] Search across name/description/author, on top of the existing tag filter
 
 ## Up next
-- [ ] Real app icon — placeholder flat-color square right now
-      (`apps/desktop/src-tauri/icons/`)
 - [ ] Tauri auto-updater, once builds are actually distributed as installers
       rather than launched in dev mode
 - [ ] Admin tool for the Category/tag taxonomy — mods now carry a

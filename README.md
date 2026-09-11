@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src=".github/assets/logo.png" alt="OpenWF Mod Manager logo" width="160">
+
 # OpenWF Mod Manager
 
 **A desktop mod manager for [OpenWF](https://about.openwf.io/) / SpaceNinjaServer.**
