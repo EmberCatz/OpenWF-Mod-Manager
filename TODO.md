@@ -139,42 +139,61 @@ Residual risk left after the two security passes (`docs/security-audit-2026-09.m
 `docs/redteam-audit-2026-09.md`) — things that are real but weren't fixable
 by an application-layer code change alone, or weren't in scope of either pass.
 
-- [ ] **Step-up re-auth for destructive admin actions.** A stolen admin
+- [x] **Step-up re-auth for destructive admin actions.** A stolen admin
       token (phishing, a compromised dev machine, a compromised npm
-      dependency reading it via `invoke("get_api_key")`) currently has full,
-      legitimate admin power the moment it's used directly against the API —
-      `requireAdmin()` (`routes/admin.ts`) can only check "is this a valid
-      admin token," not "is this really the admin." Require the account's
-      password again (a fresh, short-lived re-auth token) before kill-all-
-      sessions, maintenance mode, mass ban/delete — the handful of actions
-      where a stolen-but-valid token does the most damage. Pair with a
-      visible "active sessions" list in Settings so an admin can spot and
-      revoke a session they don't recognize.
-- [ ] **Uncompressed-size cap on zip installs.** `install_mod_zip`
-      (`src-tauri/src/commands.rs`) checks nothing about total uncompressed
-      size before extracting — a small download that decompresses to
-      gigabytes (a zip bomb) can fill a user's disk. Add a running total
-      during extraction and abort past a sane cap (e.g. 500MB), same spirit
-      as `MAX_FILE_BYTES` on the upload side.
-- [ ] **Scope down `GITHUB_TOKEN`.** Never audited by either security pass
-      (it's a Cloudflare Worker secret, not code) — confirm it's a
-      fine-grained PAT scoped to only this repo's `contents`/releases
-      permission, not a broad classic token. If it ever leaks, its blast
-      radius should be "can mess with this repo's releases," not "can act
-      as the account it belongs to" everywhere.
+      dependency reading it via `invoke("get_api_key")`) used to have full,
+      legitimate admin power the moment it was used directly against the
+      API — `requireAdmin()` could only check "is this a valid admin
+      token," not "is this really the admin." `POST /api/admin/reauth`
+      (`routes/admin.ts`) now re-checks the account's password and issues a
+      short-lived (5min), single-use token; `DELETE /users/:id`,
+      `PATCH /settings`, and `POST /kill-sessions` all require it via
+      `X-Reauth-Token` on top of the normal admin check. Desktop side is a
+      password-prompt modal (`components/ReauthPrompt.tsx`,
+      `useStepUpReauth()`) that caches the token in memory for its lifetime
+      so a burst of admin actions doesn't re-prompt every time. Deliberately
+      left off `ban`/`unban`/reports/banned-IPs — those stay the low-
+      friction default moderation actions (reversible, per the existing
+      comment in `routes/admin.ts`). The "visible active sessions list in
+      Settings" half of the original idea isn't built — parked as a
+      separate follow-up, not required for the re-auth gate itself.
+- [x] **Uncompressed-size cap on zip installs.** `install_mod_zip`
+      (`src-tauri/src/commands.rs`) now tracks real bytes written across
+      every entry (not each entry's declared/uncompressed-size header,
+      which a crafted zip could lie about) and aborts past 500MB total,
+      cleaning up whatever was partially extracted — same spirit as
+      `MAX_FILE_BYTES` on the upload side. Covered by two Rust unit tests
+      (`cargo test`, first tests added to this crate) exercising both the
+      abort-and-cleanup path and normal extraction under the cap.
+- [ ] **Scope down `GITHUB_TOKEN`.** Tried to verify this directly (the
+      token is in `apps/api/.dev.vars` locally, mirroring the Worker
+      secret) — it came back "Bad credentials" against the GitHub API, so
+      the local copy is stale/invalid and can't be used to check the real
+      production secret's scope from here. Still needs a human pass:
+      log into GitHub → Settings → Developer settings → confirm it's a
+      fine-grained PAT scoped to only `EmberCatz/OpenWF-Mods`'s
+      `contents` (release) permission, not a broad classic token — then
+      update both `.dev.vars` and the Worker's `wrangler secret put
+      GITHUB_TOKEN` with a fresh one if it needs re-scoping.
 - [ ] Ship the Tauri auto-updater (already tracked under "Up next") —
       directly relevant here too: without it, a compromised first-party
       dependency or any other post-release fix has no fast path to already-
-      installed clients short of everyone manually redownloading.
-- [ ] Periodic `npm audit` pass — `wrangler`/`sharp`/`miniflare` (dev
-      tooling, not shipped to users) currently carry known advisories, first
-      flagged during the security audit and left unresolved since they're
-      unrelated to the app itself.
+      installed clients short of everyone manually redownloading. Still
+      blocked on its own prerequisite (builds aren't distributed as
+      installers yet), so left alone rather than half-building it here.
+- [x] Periodic `npm audit` pass — re-ran it: still 3 high-severity findings,
+      all the same pre-existing `sharp < 0.35.4` chain (`sharp` →
+      `miniflare` → `wrangler`), dev tooling only, never shipped to users.
+      `npm audit fix` has nothing to apply — the fix needs a breaking
+      `wrangler` major bump, not something to do silently as part of this
+      pass. Left as-is; worth another look next time `wrangler` gets
+      deliberately upgraded.
 - [ ] Consider a custom domain in front of the Worker once one exists, to
       unlock Cloudflare's zone-level Rate Limiting Rules — the current
       D1-backed limiter (`rateLimit.ts`) is explicitly single-IP-scoped by
       design and, per its own comment, "won't hold up against a real
-      distributed attack."
+      distributed attack." Needs the user to actually own/point a domain at
+      the Worker first — nothing to implement here without one.
 
 ## Known correctness gaps
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of

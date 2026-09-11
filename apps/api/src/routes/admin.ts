@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Env } from "../env";
-import { authenticate, type Modder } from "../auth";
+import { authenticate, hashToken, type Modder } from "../auth";
+import { verifyPassword } from "../passwords";
 import { logModerationAction } from "../moderation";
 import { getSiteSettings, setSetting, SETTING_KEY_TO_FIELD, type SettingKey } from "../appSettings";
+import { checkRateLimit, clientIp } from "../rateLimit";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -20,6 +22,83 @@ async function requireAdmin(c: Context<{ Bindings: Env }>): Promise<Modder | Res
   if (!modder) return c.json({ error: "unauthorized" }, 401);
   if (!modder.isAdmin) return c.json({ error: "forbidden — admin only" }, 403);
   return modder;
+}
+
+// --- Step-up re-authentication ---
+// A stolen-but-valid admin token (phishing, a compromised dev machine) has
+// full admin power the instant requireAdmin() passes — it can only check
+// "is this a valid admin token," not "is this really the admin sitting at
+// the keyboard." For the handful of actions where that gap does the most
+// damage (kill-all-sessions, the site-wide kill-switches, hard-deleting an
+// account), also require a short-lived token proving the password was just
+// re-entered. See TODO.md § Security.
+
+const REAUTH_TOKEN_MINUTES = 5;
+
+function randomReauthToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return `owmm_reauth_${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+}
+
+// POST /api/admin/reauth — { password }. Re-checks the already-authenticated
+// admin's own password and, if correct, issues a short-lived single-use
+// token the frontend attaches as X-Reauth-Token on the specific follow-up
+// request it's gating (see requireReauth below). Rate-limited by the same
+// login limiter key/window as a normal login, since this is exactly the
+// same "guess the password" attack surface.
+admin.post("/reauth", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const allowed = await checkRateLimit(c, "login", clientIp(c), 8, 5 * 60);
+  if (!allowed) return c.json({ error: "too many attempts — wait a few minutes and try again" }, 429);
+
+  const body = await c.req.json<{ password?: string }>().catch(() => null);
+  const password = body?.password;
+  if (typeof password !== "string" || !password) return c.json({ error: "password is required" }, 400);
+
+  const row = await c.env.DB.prepare("SELECT password_hash FROM modders WHERE id = ?")
+    .bind(modder.id)
+    .first<{ password_hash: string | null }>();
+  if (!row?.password_hash) {
+    return c.json({ error: "this account has no password set — log in with username/password to use step-up verification" }, 400);
+  }
+  if (!(await verifyPassword(password, row.password_hash))) {
+    return c.json({ error: "incorrect password" }, 401);
+  }
+
+  const token = randomReauthToken();
+  const tokenHash = await hashToken(token, c.env.UPLOAD_API_KEY_SALT);
+  const expiresAt = new Date(Date.now() + REAUTH_TOKEN_MINUTES * 60 * 1000).toISOString();
+  await c.env.DB.prepare("INSERT INTO reauth_tokens (token_hash, modder_id, expires_at) VALUES (?, ?, ?)")
+    .bind(tokenHash, modder.id, expiresAt)
+    .run();
+
+  return c.json({ token, expiresAt });
+});
+
+// Checked on top of requireAdmin() by the specific routes below. The error
+// code "reauth_required" is a distinct string (not just another 401/403) so
+// the desktop app can tell "you're not an admin" apart from "prove it's
+// really you" and prompt for a password instead of just failing.
+async function requireReauth(c: Context<{ Bindings: Env }>, modder: Modder): Promise<Response | null> {
+  const token = c.req.header("X-Reauth-Token");
+  if (!token) return c.json({ error: "reauth_required" }, 401);
+
+  const tokenHash = await hashToken(token, c.env.UPLOAD_API_KEY_SALT);
+  const row = await c.env.DB.prepare(
+    "SELECT token_hash FROM reauth_tokens WHERE token_hash = ? AND modder_id = ? AND expires_at > datetime('now')"
+  )
+    .bind(tokenHash, modder.id)
+    .first();
+  if (!row) return c.json({ error: "reauth_required" }, 401);
+
+  // Single-use — deleted the moment it's spent, same "belt-and-suspenders"
+  // reasoning as kill-sessions dropping every session row.
+  await c.env.DB.prepare("DELETE FROM reauth_tokens WHERE token_hash = ?").bind(tokenHash).run();
+  return null;
 }
 
 // GET /api/admin/users — every account, with mod ownership count.
@@ -101,6 +180,8 @@ admin.post("/users/:id/unban", async (c) => {
 admin.delete("/users/:id", async (c) => {
   const modder = await requireAdmin(c);
   if (modder instanceof Response) return modder;
+  const reauthError = await requireReauth(c, modder);
+  if (reauthError) return reauthError;
 
   const targetId = c.req.param("id");
   if (targetId === modder.id) return c.json({ error: "you can't delete your own account here — use Settings" }, 400);
@@ -199,6 +280,8 @@ admin.get("/settings", async (c) => {
 admin.patch("/settings", async (c) => {
   const modder = await requireAdmin(c);
   if (modder instanceof Response) return modder;
+  const reauthError = await requireReauth(c, modder);
+  if (reauthError) return reauthError;
 
   const body = await c.req.json<Record<string, unknown>>().catch(() => null);
   if (!body) return c.json({ error: "invalid JSON body" }, 400);
@@ -220,6 +303,8 @@ admin.patch("/settings", async (c) => {
 admin.post("/kill-sessions", async (c) => {
   const modder = await requireAdmin(c);
   if (modder instanceof Response) return modder;
+  const reauthError = await requireReauth(c, modder);
+  if (reauthError) return reauthError;
 
   const result = await c.env.DB.prepare("DELETE FROM sessions").run();
   const killedCount = result.meta.changes ?? 0;

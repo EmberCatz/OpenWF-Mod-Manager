@@ -121,11 +121,11 @@ export async function addModVersion(
   return postMultipart(`/api/mods/${modId}/versions`, metadata, fileBytes, fileName, apiKey);
 }
 
-async function authedDelete(path: string, apiKey: string): Promise<void> {
+async function authedDelete(path: string, apiKey: string, reauthToken?: string): Promise<void> {
   const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
   const res = await tauriFetch(`${API_BASE_URL}${path}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey}`, ...(reauthToken ? { "X-Reauth-Token": reauthToken } : {}) },
   });
   if (res.ok) return;
   const rawBody = await res.text();
@@ -264,11 +264,15 @@ export async function recordDownload(modId: string): Promise<void> {
   await fetch(`${API_BASE_URL}/api/mods/${modId}/download`, { method: "POST" }).catch(() => {});
 }
 
-async function authedJson<T>(method: string, path: string, body: unknown, apiKey: string): Promise<T> {
+async function authedJson<T>(method: string, path: string, body: unknown, apiKey: string, reauthToken?: string): Promise<T> {
   const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
   const res = await tauriFetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      ...(reauthToken ? { "X-Reauth-Token": reauthToken } : {}),
+    },
     body: JSON.stringify(body),
   });
   const rawBody = await res.text();
@@ -342,8 +346,17 @@ export async function unbanUser(userId: string, apiKey: string): Promise<void> {
   await authedJson("POST", `/api/admin/users/${userId}/unban`, {}, apiKey);
 }
 
-export async function deleteUserAdmin(userId: string, apiKey: string): Promise<void> {
-  return authedDelete(`/api/admin/users/${userId}`, apiKey);
+export async function deleteUserAdmin(userId: string, apiKey: string, reauthToken: string): Promise<void> {
+  return authedDelete(`/api/admin/users/${userId}`, apiKey, reauthToken);
+}
+
+// --- Step-up re-authentication (routes/admin.ts § Step-up re-authentication) ---
+// Used before the handful of admin actions gated behind requireReauth()
+// there: kill-sessions, the site-wide kill-switches, hard-deleting an
+// account. Throws the same way authedJson does — "incorrect password" is
+// the expected failure mode, shown directly in the reauth prompt.
+export async function reauth(password: string, apiKey: string): Promise<{ token: string; expiresAt: string }> {
+  return authedJson("POST", "/api/admin/reauth", { password }, apiKey);
 }
 
 export async function fetchAdminReports(status: "open" | "resolved" | "dismissed" | "all", apiKey: string): Promise<AdminReport[]> {
@@ -375,12 +388,12 @@ export async function fetchSiteSettings(apiKey: string): Promise<SiteSettings> {
   return authedGet("/api/admin/settings", apiKey);
 }
 
-export async function updateSiteSettings(patch: Partial<SiteSettings>, apiKey: string): Promise<SiteSettings> {
-  return authedJson("PATCH", "/api/admin/settings", patch, apiKey);
+export async function updateSiteSettings(patch: Partial<SiteSettings>, apiKey: string, reauthToken: string): Promise<SiteSettings> {
+  return authedJson("PATCH", "/api/admin/settings", patch, apiKey, reauthToken);
 }
 
-export async function killAllSessions(apiKey: string): Promise<{ killedCount: number }> {
-  return authedJson("POST", "/api/admin/kill-sessions", {}, apiKey);
+export async function killAllSessions(apiKey: string, reauthToken: string): Promise<{ killedCount: number }> {
+  return authedJson("POST", "/api/admin/kill-sessions", {}, apiKey, reauthToken);
 }
 
 export interface BannedIp {

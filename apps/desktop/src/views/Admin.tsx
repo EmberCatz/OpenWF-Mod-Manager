@@ -21,6 +21,7 @@ import {
 import { useAccount, useApiKey } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
+import { useStepUpReauth } from "../components/ReauthPrompt";
 
 type Section = "users" | "reports" | "controls";
 type ReportFilter = "open" | "resolved" | "dismissed" | "all";
@@ -74,6 +75,7 @@ function UsersPanel({ apiKey, selfId }: { apiKey: string; selfId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const { requestToken, modal: reauthModal } = useStepUpReauth(apiKey);
 
   function load() {
     setLoading(true);
@@ -101,11 +103,12 @@ function UsersPanel({ apiKey, selfId }: { apiKey: string; selfId?: string }) {
   async function handleDelete(userId: string) {
     setBusyId(userId);
     try {
-      await deleteUserAdmin(userId, apiKey);
+      const reauthToken = await requestToken();
+      await deleteUserAdmin(userId, apiKey, reauthToken);
       setUsers((u) => u.filter((x) => x.id !== userId));
       setConfirmingDeleteId(null);
     } catch (e) {
-      toast.error(String(e));
+      if (!(e instanceof Error && e.message === "cancelled")) toast.error(String(e));
     } finally {
       setBusyId(null);
     }
@@ -115,6 +118,7 @@ function UsersPanel({ apiKey, selfId }: { apiKey: string; selfId?: string }) {
 
   return (
     <div>
+      {reauthModal}
       {error && <p className="error">{error}</p>}
       <table className="admin-table">
         <thead>
@@ -215,6 +219,7 @@ function SiteControlsPanel({ apiKey }: { apiKey: string }) {
   const [ipsLoading, setIpsLoading] = useState(true);
   const [newIp, setNewIp] = useState("");
   const [newIpReason, setNewIpReason] = useState("");
+  const { requestToken, modal: reauthModal } = useStepUpReauth(apiKey);
 
   useEffect(() => {
     fetchSiteSettings(apiKey)
@@ -233,11 +238,12 @@ function SiteControlsPanel({ apiKey }: { apiKey: string }) {
   async function applySetting(field: keyof SiteSettings, value: boolean) {
     setBusyKey(field);
     try {
-      const updated = await updateSiteSettings({ [field]: value }, apiKey);
+      const reauthToken = await requestToken();
+      const updated = await updateSiteSettings({ [field]: value }, apiKey, reauthToken);
       setSettings(updated);
       setConfirmingField(null);
     } catch (e) {
-      toast.error(String(e));
+      if (!(e instanceof Error && e.message === "cancelled")) toast.error(String(e));
     } finally {
       setBusyKey(null);
     }
@@ -246,11 +252,12 @@ function SiteControlsPanel({ apiKey }: { apiKey: string }) {
   async function handleKillSessions() {
     setBusyKey("kill-sessions");
     try {
-      const { killedCount } = await killAllSessions(apiKey);
+      const reauthToken = await requestToken();
+      const { killedCount } = await killAllSessions(apiKey, reauthToken);
       toast.success(`Logged out ${killedCount} session${killedCount === 1 ? "" : "s"}.`);
       setConfirmingKillSessions(false);
     } catch (e) {
-      toast.error(String(e));
+      if (!(e instanceof Error && e.message === "cancelled")) toast.error(String(e));
     } finally {
       setBusyKey(null);
     }
@@ -289,6 +296,7 @@ function SiteControlsPanel({ apiKey }: { apiKey: string }) {
 
   return (
     <div>
+      {reauthModal}
       <h4 className="sidebar-section__title">Kill-switches</h4>
       <p className="hint">
         Each switch blocks the relevant action for everyone except admins. Turning one back off restores normal

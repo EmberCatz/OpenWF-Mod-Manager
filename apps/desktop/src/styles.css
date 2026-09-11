@@ -1604,6 +1604,13 @@ body {
   height: auto;
 }
 
+/* --- Small modal variant (reauth prompt, confirmation dialogs) --- */
+
+.modal-box--small {
+  width: min(360px, 100%);
+  height: auto;
+}
+
 /* --- Pluto syntax highlighting --- */
 
 .tok-keyword {

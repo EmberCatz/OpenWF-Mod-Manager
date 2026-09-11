@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
@@ -123,16 +123,54 @@ pub fn install_mod_file(bytes: Vec<u8>, target_dir: String, file_name: String) -
     Ok(dest_path.display().to_string())
 }
 
+// A small download that decompresses to gigabytes (a zip bomb) can fill a
+// user's disk — this caps the running total of bytes actually written
+// across every entry in one archive, same spirit as MAX_FILE_BYTES on the
+// upload side. Checked against real bytes copied, not each entry's
+// declared/uncompressed-size header (which a crafted zip could lie about),
+// so this holds even against an archive with falsified metadata.
+const MAX_UNCOMPRESSED_BYTES: u64 = 500 * 1024 * 1024;
+const COPY_CHUNK_BYTES: usize = 64 * 1024;
+
+// Copies from `entry` to `out_file` in bounded chunks, adding each chunk to
+// `running_total` and erroring out before writing anything that would push
+// the archive's cumulative uncompressed size past `cap`.
+fn copy_with_cap(entry: &mut impl Read, out_file: &mut fs::File, running_total: &mut u64, cap: u64) -> Result<(), String> {
+    let mut buf = [0u8; COPY_CHUNK_BYTES];
+    loop {
+        let n = entry.read(&mut buf).map_err(|e| format!("failed to read zip entry: {e}"))?;
+        if n == 0 {
+            return Ok(());
+        }
+        *running_total += n as u64;
+        if *running_total > cap {
+            return Err(format!(
+                "archive decompresses to more than the {}MB cap — refusing to extract (possible zip bomb)",
+                cap / (1024 * 1024)
+            ));
+        }
+        out_file.write_all(&buf[..n]).map_err(|e| format!("failed to write file: {e}"))?;
+    }
+}
+
 // Extracts a zip's contents directly into target_dir (which the frontend
 // has already resolved from the mod's category — see Browse.tsx). Used
 // only for the minority of mods that need more than one file.
 #[tauri::command]
 pub fn install_mod_zip(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<String>, String> {
+    extract_zip_with_cap(zip_bytes, target_dir, MAX_UNCOMPRESSED_BYTES)
+}
+
+// `cap` is only a parameter (not always MAX_UNCOMPRESSED_BYTES) so the
+// zip-bomb-abort behavior can be exercised in a unit test without actually
+// writing hundreds of megabytes to disk.
+fn extract_zip_with_cap(zip_bytes: Vec<u8>, target_dir: String, cap: u64) -> Result<Vec<String>, String> {
     let dir = PathBuf::from(&target_dir);
     fs::create_dir_all(&dir).map_err(|e| format!("failed to create '{}': {e}", dir.display()))?;
 
     let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("not a valid zip: {e}"))?;
     let mut extracted = Vec::new();
+    let mut running_total: u64 = 0;
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| format!("failed to read zip entry: {e}"))?;
@@ -156,7 +194,17 @@ pub fn install_mod_zip(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<Str
         }
 
         let mut out_file = fs::File::create(&dest_path).map_err(|e| format!("failed to create '{}': {e}", dest_path.display()))?;
-        std::io::copy(&mut entry, &mut out_file).map_err(|e| format!("failed to write '{}': {e}", dest_path.display()))?;
+        if let Err(err) = copy_with_cap(&mut entry, &mut out_file, &mut running_total, cap) {
+            drop(out_file);
+            // Abort cleanly rather than leaving a half-extracted mod behind:
+            // remove the file that was mid-write plus everything already
+            // extracted earlier in this same call.
+            let _ = fs::remove_file(&dest_path);
+            for path in &extracted {
+                let _ = fs::remove_file(path);
+            }
+            return Err(err);
+        }
 
         // Absolute path, not just the relative in-zip path — the frontend
         // stores this list verbatim to know what to delete on uninstall,
@@ -233,5 +281,48 @@ pub fn uninstall_files(paths: Vec<String>) -> Result<(), String> {
         Ok(())
     } else {
         Err(errors.join("; "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_test_zip(entry_name: &str, content: &[u8]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        writer.start_file(entry_name, options).unwrap();
+        writer.write_all(content).unwrap();
+        writer.finish().unwrap().into_inner()
+    }
+
+    // Regression test for the zip-bomb cap (TODO.md § Security): a tiny cap
+    // stands in for MAX_UNCOMPRESSED_BYTES so the test doesn't actually need
+    // to write hundreds of megabytes to prove the abort path works.
+    #[test]
+    fn install_mod_zip_aborts_and_cleans_up_past_the_cap() {
+        let tmp = std::env::temp_dir().join(format!("owmm-ziptest-abort-{}", std::process::id()));
+        let zip_bytes = build_test_zip("payload.txt", &[0u8; 2000]);
+
+        let result = extract_zip_with_cap(zip_bytes, tmp.display().to_string(), 1000);
+
+        assert!(result.is_err(), "a 2000-byte entry should be rejected by a 1000-byte cap");
+        assert!(!tmp.join("payload.txt").exists(), "the partially-written file should be cleaned up on abort");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn install_mod_zip_extracts_normally_under_the_cap() {
+        let tmp = std::env::temp_dir().join(format!("owmm-ziptest-ok-{}", std::process::id()));
+        let content = vec![7u8; 500];
+        let zip_bytes = build_test_zip("payload.txt", &content);
+
+        let result = extract_zip_with_cap(zip_bytes, tmp.display().to_string(), 1000);
+
+        assert!(result.is_ok());
+        assert_eq!(fs::read(tmp.join("payload.txt")).unwrap(), content);
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }
