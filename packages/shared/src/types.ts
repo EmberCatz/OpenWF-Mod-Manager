@@ -112,11 +112,10 @@ export interface ApiError {
 // apps/desktop/src/settings.ts's commenterName), authorName is just
 // whatever the commenter typed and isn't a verified identity. parentId
 // makes it a reply (Reddit-style nesting, built into a tree client-side
-// from the flat list GET /:id/comments returns). authorAccountId is a
-// best-effort match: the server resolves authorName against modders.name
-// and fills this in when one exists, purely so the UI can make the name a
-// profile link — it's a display convenience, not proof the commenter
-// controls that account.
+// from the flat list GET /:id/comments returns). authorAccountId is set
+// server-side only when the poster was actually authenticated as that
+// modder at post time (see routes/mods.ts) — never derived from
+// authorName, so it can't be spoofed by typing someone else's name.
 export interface Comment {
   id: number;
   modId: string;

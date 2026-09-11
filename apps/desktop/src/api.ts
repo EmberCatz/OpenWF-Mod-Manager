@@ -1,3 +1,4 @@
+import { z, type ZodType } from "zod";
 import type {
   Comment,
   Mod,
@@ -7,6 +8,7 @@ import type {
   UpdateModMetadata,
   UploadMetadata,
 } from "@openwf-mod-manager/shared";
+import { CommentSchema, ModWithVersionsSchema, ModderProfileSchema, ReviewSummarySchema } from "@openwf-mod-manager/shared";
 
 // Points at the deployed Worker (apps/api). Override for local dev with a
 // .env file (VITE_API_BASE_URL=http://127.0.0.1:8787) once wrangler dev is running.
@@ -15,10 +17,26 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://openwf-mod-ma
 // Reads a plain (non-authed) GET response, surfacing the server's own
 // `message`/`error` field on failure — e.g. site-controls responses like
 // maintenance mode or a disabled feature come with a human-readable
-// message that's worth showing as-is instead of a bare status code.
-async function readJsonOrThrow<T>(res: Response, fallbackMessage: string): Promise<T> {
+// message that's worth showing as-is instead of a bare status code. On
+// success, validates the body against `schema` rather than trusting an
+// `as T` cast — a stale/misconfigured backend sending an unexpected shape
+// throws one clear error here instead of a confusing crash somewhere deep
+// in a component that assumed the shape was right.
+async function readJsonOrThrow<T>(res: Response, schema: ZodType<T>, fallbackMessage: string): Promise<T> {
   const rawBody = await res.text();
-  if (res.ok) return JSON.parse(rawBody) as T;
+  if (res.ok) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(rawBody);
+    } catch {
+      throw new Error(`${fallbackMessage}: response wasn't valid JSON`);
+    }
+    const result = schema.safeParse(raw);
+    if (!result.success) {
+      throw new Error(`${fallbackMessage}: unexpected response shape (${result.error.issues[0]?.message ?? "validation failed"})`);
+    }
+    return result.data;
+  }
   let parsed: { error?: string; message?: string } | null = null;
   try {
     parsed = JSON.parse(rawBody);
@@ -30,12 +48,12 @@ async function readJsonOrThrow<T>(res: Response, fallbackMessage: string): Promi
 
 export async function fetchModList(): Promise<ModWithVersions[]> {
   const res = await fetch(`${API_BASE_URL}/api/mods`);
-  return readJsonOrThrow(res, "failed to load mod list");
+  return readJsonOrThrow(res, z.array(ModWithVersionsSchema), "failed to load mod list");
 }
 
 export async function fetchMod(id: string): Promise<ModWithVersions> {
   const res = await fetch(`${API_BASE_URL}/api/mods/${id}`);
-  return readJsonOrThrow(res, `failed to load mod '${id}'`);
+  return readJsonOrThrow(res, ModWithVersionsSchema, `failed to load mod '${id}'`);
 }
 
 // For the "My Mods" tab — every mod owned by whoever this token belongs to
@@ -159,7 +177,7 @@ async function postJson<T>(path: string, body: unknown, apiKey?: string): Promis
 // ratings — passed along so the server can fill in each comment's myVote.
 export async function fetchComments(modId: string, voterId: string): Promise<Comment[]> {
   const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/comments?voterId=${encodeURIComponent(voterId)}`);
-  return readJsonOrThrow(res, "failed to load comments");
+  return readJsonOrThrow(res, z.array(CommentSchema), "failed to load comments");
 }
 
 // apiKey is optional — pass the logged-in user's token (if any) so the
@@ -187,7 +205,7 @@ export async function voteOnComment(
 
 export async function fetchReviewSummary(modId: string, reviewerId: string): Promise<ReviewSummary> {
   const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/reviews?reviewerId=${encodeURIComponent(reviewerId)}`);
-  return readJsonOrThrow(res, "failed to load reviews");
+  return readJsonOrThrow(res, ReviewSummarySchema, "failed to load reviews");
 }
 
 export async function postReview(modId: string, reviewerId: string, rating: number): Promise<ReviewSummary> {
@@ -236,7 +254,7 @@ export async function updateAvatar(avatarKey: string, apiKey: string): Promise<A
 // username link across the app (see profileNav.ts / components/AuthorLink.tsx).
 export async function fetchModderProfile(id: string): Promise<ModderProfile> {
   const res = await fetch(`${API_BASE_URL}/api/modders/${id}`);
-  return readJsonOrThrow(res, "failed to load profile");
+  return readJsonOrThrow(res, ModderProfileSchema, "failed to load profile");
 }
 
 // Best-effort popularity-counter ping — swallows its own errors so a slow

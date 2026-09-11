@@ -15,7 +15,7 @@ Read-only audit across three layers: Tauri/native desktop, Cloudflare Worker/D1 
 
 | # | Finding | Location | Status |
 |---|---|---|---|
-| 1 | Zero runtime validation of API responses — every function trusts `as T` casts, no Zod/manual shape checks. Direct feeder for P0 #1. | `apps/desktop/src/api.ts` | Open |
+| 1 | Zero runtime validation of API responses — every function trusts `as T` casts, no Zod/manual shape checks. Direct feeder for P0 #1. | `apps/desktop/src/api.ts` | **Done** (partial — see note) |
 | 2 | Comment vote race condition — rapid double-vote can leave `score`/`myVote` inconsistent with the server; no request sequencing/cancellation. | `apps/desktop/src/components/CommentSection.tsx:210-224` | Open |
 | 3 | No auto-updater configured at all — no mechanism to ship a security fix to installed clients. | `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml` | Open |
 | 4 | No server-side pagination — entire mod catalog downloads on every Browse load. | `apps/desktop/src/api.ts:31-34` (`fetchModList`) | Open |
@@ -47,7 +47,7 @@ Read-only audit across three layers: Tauri/native desktop, Cloudflare Worker/D1 
 
 1. **Add a top-level `ErrorBoundary`** wrapping `<App/>` in `main.tsx`. *(Done — see below)*
 2. **Fix comment impersonation.** *(Done — `author_account_id` is now a real column on `comments`, set once at insert time only when the poster was authenticated as that modder; never derived from the typed `authorName`. Migration `0015_comment_author_account_id.sql`. Verified locally: an unauthenticated post typing a real modder's name gets `authorAccountId: null`; an authenticated post links to the real account regardless of what name was typed.)*
-3. Add Zod validation to `api.ts`, starting with `fetchModList`, `fetchMod`, `fetchComments`.
+3. **Add Zod validation to `api.ts`.** *(Done — schemas live in `packages/shared/src/schemas.ts`, hand-kept in sync with `types.ts`. `readJsonOrThrow` now takes a schema and validates with `.safeParse` instead of `as T`; converted every one of its callers: `fetchModList`, `fetchMod`, `fetchComments`, `fetchReviewSummary`, `fetchModderProfile`. `authedJson`/`authedGet` (My Mods, admin panels, account) are a separate helper pair and remain unconverted — left for a follow-up increment. Verified live: real backend data round-trips cleanly through Browse and a mod's comment thread; a simulated malformed comment response (missing `score`, wrong-typed `myVote`) is now rejected with a clear error instead of silently reaching a component.)*
 4. Harden `handleVote` in `CommentSection.tsx` with a request-id/cancellation guard.
 5. Move the API key to `tauri-plugin-store`/OS keychain, and set an actual `security.csp` in `tauri.conf.json`.
 6. Add a containment check to `uninstall_files`/`read_file_bytes`/`write_file_bytes` in `commands.rs`.
