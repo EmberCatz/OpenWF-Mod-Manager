@@ -5,9 +5,11 @@ import MyMods from "./views/MyMods";
 import LiveSettings from "./views/LiveSettings";
 import Admin from "./views/Admin";
 import Settings from "./views/Settings";
+import Profile from "./views/Profile";
 import ToastHost from "./components/ToastHost";
 import { useAccount } from "./useAccount";
 import { isLiveSettingsTabEnabled, subscribeSettings } from "./settings";
+import { subscribeProfileNav } from "./profileNav";
 
 const ALL_TABS = [
   { id: "browse", label: "Browse", view: Browse },
@@ -24,8 +26,14 @@ export default function App() {
   // Bumped whenever a tab-visibility toggle changes in Settings, so the tab
   // list below re-filters immediately instead of needing an app restart.
   const [, setSettingsVersion] = useState(0);
+  // Set by any AuthorLink across the app (profileNav.ts) — while non-null,
+  // Profile replaces whatever tab is active instead of being a tab itself,
+  // so it can be opened from anywhere without every view needing to know
+  // about tab navigation.
+  const [profileAccountId, setProfileAccountId] = useState<string | null>(null);
 
   useEffect(() => subscribeSettings(() => setSettingsVersion((v) => v + 1)), []);
+  useEffect(() => subscribeProfileNav(setProfileAccountId), []);
 
   // Admin only exists for accounts with is_admin set (see
   // apps/api/scripts/grant-admin.mjs); Live Settings can be hidden entirely
@@ -55,8 +63,8 @@ export default function App() {
         ))}
       </nav>
 
-      <div key={activeTab} className="fade-in">
-        <ActiveView />
+      <div key={profileAccountId ? `profile-${profileAccountId}` : activeTab} className="fade-in">
+        {profileAccountId ? <Profile accountId={profileAccountId} /> : <ActiveView />}
       </div>
 
       <footer className="app-footer">

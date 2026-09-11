@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Mod, ModWithVersions } from "@openwf-mod-manager/shared";
+import { DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
 import { updateMod } from "../api";
 import { toast } from "../toast";
 import ThumbnailPreview from "./ThumbnailPreview";
@@ -25,6 +26,8 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
   const [thumbnailPosition, setThumbnailPosition] = useState(mod.thumbnailPosition);
   const [screenshotUrlsText, setScreenshotUrlsText] = useState(mod.screenshotUrls.join("\n"));
   const [tags, setTags] = useState(mod.tags);
+  const [theme, setTheme] = useState(mod.theme);
+  const [subAuthor, setSubAuthor] = useState(mod.subAuthor ?? "");
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "error" }>({ kind: "idle" });
 
   const previewScreenshotUrls = screenshotUrlsText
@@ -35,6 +38,10 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
   async function save() {
     if (!name.trim()) {
       toast.error("Name can't be empty");
+      return;
+    }
+    if (!theme.trim()) {
+      toast.error("Category can't be empty");
       return;
     }
     setStatus({ kind: "working" });
@@ -48,6 +55,8 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
           thumbnailPosition: thumbnailUrl.trim() ? thumbnailPosition : undefined,
           screenshotUrls: previewScreenshotUrls,
           tags,
+          theme: theme.trim(),
+          subAuthor: subAuthor.trim() || null,
         },
         apiKey
       );
@@ -78,6 +87,20 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
         <span className="hint">One link per line.</span>
         <textarea rows={3} value={screenshotUrlsText} onChange={(e) => setScreenshotUrlsText(e.target.value)} />
         <ScreenshotPreviewList urls={previewScreenshotUrls} />
+      </label>
+      <label className="field">
+        <span>Category</span>
+        <input type="text" list="edit-theme-options" value={theme} onChange={(e) => setTheme(e.target.value)} />
+        <datalist id="edit-theme-options">
+          {DEFAULT_MOD_THEMES.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+      </label>
+      <label className="field">
+        <span>Sub-Author</span>
+        <span className="hint">Credit a co-creator or secondary contributor.</span>
+        <input type="text" value={subAuthor} onChange={(e) => setSubAuthor(e.target.value)} />
       </label>
       <label className="field">
         <span>Tags</span>

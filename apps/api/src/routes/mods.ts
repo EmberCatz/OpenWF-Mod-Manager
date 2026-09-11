@@ -5,8 +5,18 @@ import { checkRateLimit, clientIp } from "../rateLimit";
 import { logModerationAction } from "../moderation";
 import { getSetting } from "../appSettings";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
+import { containsLink, containsProfanity } from "../contentFilters";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
-import type { Comment, Mod, ModVersion, ModWithVersions, ReviewSummary, UpdateModMetadata, UploadMetadata } from "@openwf-mod-manager/shared";
+import type {
+  Comment,
+  CommentVoteRequest,
+  Mod,
+  ModVersion,
+  ModWithVersions,
+  ReviewSummary,
+  UpdateModMetadata,
+  UploadMetadata,
+} from "@openwf-mod-manager/shared";
 
 export const mods = new Hono<{ Bindings: Env }>();
 
@@ -18,9 +28,12 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_SCREENSHOTS = 10;
 const MAX_TAGS = 15;
 const MAX_TAG_LENGTH = 30;
+const MAX_THEME_LENGTH = 40;
+const MAX_SUB_AUTHOR_LENGTH = 60;
 const MAX_COMMENT_BODY_LENGTH = 2000;
 const MAX_AUTHOR_NAME_LENGTH = 40;
 const MAX_COMMENTS_LISTED = 200;
+const MAX_VOTER_ID_LENGTH = 100;
 
 // 20 uploads/hour/modder — generous for legitimate iteration (pushing a
 // few versions while testing), tight enough to cap a runaway script.
@@ -32,6 +45,10 @@ const COMMENT_LIMIT = 10;
 const COMMENT_WINDOW_SECONDS = 10 * 60;
 const REVIEW_LIMIT = 20;
 const REVIEW_WINDOW_SECONDS = 10 * 60;
+// Voting is cheap to spam-click, so this is looser than comments/reviews
+// but still bounded — same anonymous-per-IP model, see checkRateLimit.
+const COMMENT_VOTE_LIMIT = 60;
+const COMMENT_VOTE_WINDOW_SECONDS = 10 * 60;
 // 60/10min/IP — generous; this is best-effort telemetry, not something
 // worth ever blocking a real install/download over.
 const DOWNLOAD_COUNT_LIMIT = 60;
@@ -121,7 +138,31 @@ function validateTags(input: unknown): string[] | null {
   return [...new Set(cleaned)];
 }
 
-function rowToVersion(row: any): ModVersion {
+// Thematic category (Gameplay, Cosmetic, ...) — free-form like tags, not
+// validated against DEFAULT_MOD_THEMES, so a mod can introduce a new theme
+// just by using it (same reasoning as validateTags above).
+function validateTheme(input: unknown): string | null {
+  if (input === undefined) return "Uncategorized";
+  if (typeof input !== "string") return null;
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length > MAX_THEME_LENGTH) return null;
+  return trimmed;
+}
+
+// Optional co-creator/secondary-contributor credit — free text, same shape
+// as validateTheme but nullable (most mods have no sub-author at all).
+// undefined leaves the field untouched (PATCH) or unset (POST); null/""
+// explicitly clears it.
+function validateSubAuthor(input: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (input === undefined) return { ok: true, value: null };
+  if (input === null) return { ok: true, value: null };
+  if (typeof input !== "string") return { ok: false };
+  const trimmed = input.trim();
+  if (trimmed.length > MAX_SUB_AUTHOR_LENGTH) return { ok: false };
+  return { ok: true, value: trimmed || null };
+}
+
+export function rowToVersion(row: any): ModVersion {
   return {
     id: row.id,
     modId: row.mod_id,
@@ -140,19 +181,26 @@ function rowToComment(row: any): Comment {
   return {
     id: row.id,
     modId: row.mod_id,
+    parentId: row.parent_id ?? null,
     authorName: row.author_name,
+    authorAccountId: row.author_account_id ?? null,
     body: row.body,
+    score: row.score ?? 0,
+    myVote: (row.my_vote ?? 0) as -1 | 0 | 1,
     createdAt: row.created_at,
   };
 }
 
-function rowToMod(row: any): Mod {
+export function rowToMod(row: any): Mod {
   return {
     id: row.id,
     name: row.name,
     author: row.author,
+    subAuthor: row.sub_author ?? null,
+    ownerId: row.owner_id,
     description: row.description,
     category: row.category,
+    theme: row.theme ?? "Uncategorized",
     thumbnailUrl: row.thumbnail_url ?? null,
     thumbnailPosition: row.thumbnail_position ?? "50% 50%",
     screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
@@ -168,26 +216,21 @@ function rowToMod(row: any): Mod {
 
 // Appended to m.* in every mods listing query below so Browse can show a
 // comment count and star rating per card without an extra request per mod.
-const AGGREGATE_COLUMNS = `
+// Exported so routes/modders.ts's public-profile mod list can reuse the
+// exact same shape instead of drifting out of sync.
+export const AGGREGATE_COLUMNS = `
      (SELECT COUNT(*) FROM comments c2 WHERE c2.mod_id = m.id) as comment_count,
      (SELECT COUNT(*) FROM reviews r2 WHERE r2.mod_id = m.id) as review_count,
      (SELECT AVG(rating) FROM reviews r2 WHERE r2.mod_id = m.id) as avg_rating`;
 
-// GET /api/mods — list every mod with its latest version, for the desktop
-// app's browse/list view. Download URLs point straight at a GitHub release
-// asset; the client never re-requests the Worker to fetch the actual file.
-mods.get("/", async (c) => {
-  const { results } = await c.env.DB.prepare(
-    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at,
-     ${AGGREGATE_COLUMNS}
-     FROM mods m
-     LEFT JOIN mod_versions v ON v.mod_id = m.id
-     WHERE v.id = (SELECT id FROM mod_versions WHERE mod_id = m.id ORDER BY created_at DESC LIMIT 1)
-        OR v.id IS NULL
-     ORDER BY m.updated_at DESC`
-  ).all();
+// Shared by every "mods + their latest version" listing query (GET /,
+// GET /mine, and routes/modders.ts's public profile) — each row is a mod
+// LEFT JOINed to just its newest version (v_id NULL when it has none yet).
+export const LATEST_VERSION_JOIN_COLUMNS =
+  "v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at";
 
-  const list: ModWithVersions[] = results.map((row: any) => ({
+export function rowToModWithLatestVersion(row: any): ModWithVersions {
+  return {
     ...rowToMod(row),
     versions: row.v_id
       ? [
@@ -205,9 +248,24 @@ mods.get("/", async (c) => {
           }),
         ]
       : [],
-  }));
+  };
+}
 
-  return c.json(list);
+// GET /api/mods — list every mod with its latest version, for the desktop
+// app's browse/list view. Download URLs point straight at a GitHub release
+// asset; the client never re-requests the Worker to fetch the actual file.
+mods.get("/", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT m.*, ${LATEST_VERSION_JOIN_COLUMNS},
+     ${AGGREGATE_COLUMNS}
+     FROM mods m
+     LEFT JOIN mod_versions v ON v.mod_id = m.id
+     WHERE v.id = (SELECT id FROM mod_versions WHERE mod_id = m.id ORDER BY created_at DESC LIMIT 1)
+        OR v.id IS NULL
+     ORDER BY m.updated_at DESC`
+  ).all();
+
+  return c.json(results.map(rowToModWithLatestVersion));
 });
 
 // GET /api/mods/mine — every mod owned by the authenticated modder, for
@@ -218,7 +276,7 @@ mods.get("/mine", async (c) => {
   if (!modder) return c.json({ error: "unauthorized" }, 401);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT m.*, v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at,
+    `SELECT m.*, ${LATEST_VERSION_JOIN_COLUMNS},
      ${AGGREGATE_COLUMNS}
      FROM mods m
      LEFT JOIN mod_versions v ON v.mod_id = m.id
@@ -229,27 +287,7 @@ mods.get("/mine", async (c) => {
     .bind(modder.id)
     .all();
 
-  const list: ModWithVersions[] = results.map((row: any) => ({
-    ...rowToMod(row),
-    versions: row.v_id
-      ? [
-          rowToVersion({
-            id: row.v_id,
-            mod_id: row.id,
-            version: row.version,
-            file_name: row.file_name,
-            download_url: row.download_url,
-            file_size: row.file_size,
-            checksum: row.checksum,
-            game_versions: row.game_versions,
-            changelog: row.changelog,
-            created_at: row.v_created_at,
-          }),
-        ]
-      : [],
-  }));
-
-  return c.json(list);
+  return c.json(results.map(rowToModWithLatestVersion));
 });
 
 // GET /api/mods/:id — full detail incl. every version (changelog history).
@@ -332,6 +370,18 @@ mods.patch("/:id", async (c) => {
     sets.push("tags = ?");
     values.push(JSON.stringify(tags));
   }
+  if (body.theme !== undefined) {
+    const theme = validateTheme(body.theme);
+    if (!theme) return c.json({ error: `theme must be a non-empty string up to ${MAX_THEME_LENGTH} chars` }, 400);
+    sets.push("theme = ?");
+    values.push(theme);
+  }
+  if (body.subAuthor !== undefined) {
+    const subAuthorResult = validateSubAuthor(body.subAuthor);
+    if (!subAuthorResult.ok) return c.json({ error: `subAuthor must be a string up to ${MAX_SUB_AUTHOR_LENGTH} chars` }, 400);
+    sets.push("sub_author = ?");
+    values.push(subAuthorResult.value);
+  }
 
   if (sets.length === 0) return c.json({ error: "no fields to update" }, 400);
 
@@ -400,8 +450,8 @@ mods.post("/", async (c) => {
   } catch {
     return c.json({ error: "'metadata' field is not valid JSON" }, 400);
   }
-  if (!metadata.name || !metadata.author || !metadata.version || !metadata.category) {
-    return c.json({ error: "metadata requires name, author, category, version" }, 400);
+  if (!metadata.name || !metadata.version || !metadata.category) {
+    return c.json({ error: "metadata requires name, category, version" }, 400);
   }
 
   const gameVersions = validateGameVersions(metadata.gameVersions);
@@ -419,6 +469,12 @@ mods.post("/", async (c) => {
 
   const tags = validateTags(metadata.tags);
   if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);
+
+  const theme = validateTheme(metadata.theme);
+  if (!theme) return c.json({ error: `theme must be a non-empty string up to ${MAX_THEME_LENGTH} chars` }, 400);
+
+  const subAuthorResult = validateSubAuthor(metadata.subAuthor);
+  if (!subAuthorResult.ok) return c.json({ error: `subAuthor must be a string up to ${MAX_SUB_AUTHOR_LENGTH} chars` }, 400);
 
   const modId = slugify(metadata.name);
   if (!modId) return c.json({ error: "name produced an empty slug" }, 400);
@@ -439,14 +495,18 @@ mods.post("/", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, description, category, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mods (id, name, author, sub_author, description, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         modId,
         metadata.name,
-        metadata.author,
+        // Always the uploading account's own name — never client-supplied,
+        // so it can't be spoofed (see UploadMetadata.author's docstring).
+        modder.name,
+        subAuthorResult.value,
         metadata.description ?? "",
         metadata.category,
+        theme,
         metadata.thumbnailUrl ?? null,
         thumbnailPosition,
         JSON.stringify(screenshotUrls),
@@ -628,26 +688,50 @@ mods.delete("/:id", async (c) => {
   return c.body(null, 204);
 });
 
-// GET /api/mods/:id/comments — newest first. No auth: this project has no
+// Appended to c.* wherever a comment needs its authorAccountId/score/myVote
+// filled in (the GET list below, and POST's response for the comment it
+// just created — a bare INSERT...RETURNING * row has none of these, so
+// POST re-queries through this same shape instead of returning that row
+// directly). The `?` is voterId, bound before mod_id/id in every caller.
+const COMMENT_ENRICHMENT_COLUMNS = `
+     (SELECT id FROM modders m2 WHERE m2.name = c.author_name COLLATE NOCASE LIMIT 1) as author_account_id,
+     (SELECT COALESCE(SUM(value), 0) FROM comment_votes cv WHERE cv.comment_id = c.id) as score,
+     (SELECT value FROM comment_votes cv2 WHERE cv2.comment_id = c.id AND cv2.voter_id = ?) as my_vote`;
+
+// GET /api/mods/:id/comments?voterId=... — flat list (the client builds the
+// reply tree from parentId, and applies its own Newest/Oldest/Top sort —
+// see Browse's CommentSection). No auth to post/read: this project has no
 // account system for regular users, only modder API keys for uploads (see
-// docs/architecture.md). authorName is whatever the commenter typed.
+// docs/architecture.md). authorName is whatever the commenter typed;
+// authorAccountId is a best-effort match against modders.name purely so
+// the UI can link it to a profile when one happens to exist (case-
+// insensitive, first match — modders.name has no UNIQUE constraint for
+// legacy API-key accounts, so this is "a" match, not a guaranteed one).
 mods.get("/:id/comments", async (c) => {
   const modId = c.req.param("id");
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (!mod) return c.json({ error: "not found" }, 404);
 
+  const voterId = c.req.query("voterId") ?? null;
+
   const { results } = await c.env.DB.prepare(
-    "SELECT * FROM comments WHERE mod_id = ? ORDER BY created_at DESC LIMIT ?"
+    `SELECT c.*, ${COMMENT_ENRICHMENT_COLUMNS}
+     FROM comments c
+     WHERE c.mod_id = ?
+     ORDER BY c.created_at ASC
+     LIMIT ?`
   )
-    .bind(modId, MAX_COMMENTS_LISTED)
+    .bind(voterId, modId, MAX_COMMENTS_LISTED)
     .all();
 
   return c.json(results.map(rowToComment) as Comment[]);
 });
 
-// POST /api/mods/:id/comments — { authorName, body }. Deliberately open,
-// same billing-risk reasoning as the rest of this API: worst case is text
-// spam, not money — see docs/architecture.md § Security & billing-risk notes.
+// POST /api/mods/:id/comments — { authorName, body, parentId? }. Deliberately
+// open, same billing-risk reasoning as the rest of this API: worst case is
+// text spam, not money — see docs/architecture.md § Security & billing-risk
+// notes. Links and basic profanity are rejected outright (contentFilters.ts)
+// rather than silently censored, so the poster knows to edit and resubmit.
 mods.post("/:id/comments", async (c) => {
   if (await getSetting(c.env, "comments_disabled")) {
     return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
@@ -660,7 +744,7 @@ mods.post("/:id/comments", async (c) => {
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (!mod) return c.json({ error: "not found" }, 404);
 
-  const body = await c.req.json<{ authorName?: string; body?: string }>().catch(() => null);
+  const body = await c.req.json<{ authorName?: string; body?: string; parentId?: number | null }>().catch(() => null);
   const authorName = body?.authorName?.trim();
   const commentBody = body?.body?.trim();
   if (!authorName || authorName.length > MAX_AUTHOR_NAME_LENGTH) {
@@ -669,31 +753,124 @@ mods.post("/:id/comments", async (c) => {
   if (!commentBody || commentBody.length > MAX_COMMENT_BODY_LENGTH) {
     return c.json({ error: `body must be 1-${MAX_COMMENT_BODY_LENGTH} characters` }, 400);
   }
+  if (containsLink(commentBody)) {
+    return c.json({ error: "links aren't allowed in comments" }, 400);
+  }
+  if (containsProfanity(authorName) || containsProfanity(commentBody)) {
+    return c.json({ error: "comment contains language that isn't allowed here" }, 400);
+  }
+
+  let parentId: number | null = null;
+  if (body?.parentId !== undefined && body.parentId !== null) {
+    if (typeof body.parentId !== "number") return c.json({ error: "parentId must be a number" }, 400);
+    const parent = await c.env.DB.prepare("SELECT id FROM comments WHERE id = ? AND mod_id = ?")
+      .bind(body.parentId, modId)
+      .first();
+    if (!parent) return c.json({ error: "parentId does not refer to a comment on this mod" }, 400);
+    parentId = body.parentId;
+  }
 
   const now = new Date().toISOString();
   const result = await c.env.DB.prepare(
-    "INSERT INTO comments (mod_id, author_name, body, created_at) VALUES (?, ?, ?, ?) RETURNING *"
+    "INSERT INTO comments (mod_id, parent_id, author_name, body, created_at) VALUES (?, ?, ?, ?, ?) RETURNING *"
   )
-    .bind(modId, authorName, commentBody, now)
-    .first();
+    .bind(modId, parentId, authorName, commentBody, now)
+    .first<any>();
 
-  return c.json(rowToComment(result), 201);
+  // A brand-new comment can't have any votes yet, so score/myVote are
+  // always 0 — only authorAccountId needs an actual lookup (same
+  // best-effort name match GET's listing uses).
+  const authorAccount = await c.env.DB.prepare("SELECT id FROM modders WHERE name = ? COLLATE NOCASE LIMIT 1")
+    .bind(authorName)
+    .first<{ id: string }>();
+
+  return c.json(rowToComment({ ...result, author_account_id: authorAccount?.id ?? null, score: 0, my_vote: 0 }), 201);
+});
+
+// POST /api/mods/:modId/comments/:commentId/vote — { reviewerId, value }.
+// value 1/-1 upserts this install's vote, 0 removes it. Same anonymous
+// per-install identity reviews use (see reviewerId.ts) — voting doesn't
+// require an account any more than commenting does.
+mods.post("/:modId/comments/:commentId/vote", async (c) => {
+  if (await getSetting(c.env, "comments_disabled")) {
+    return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
+  }
+
+  const allowed = await checkRateLimit(c, "comment_vote", clientIp(c), COMMENT_VOTE_LIMIT, COMMENT_VOTE_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many votes from this connection — wait a bit and try again" }, 429);
+
+  const modId = c.req.param("modId");
+  const commentId = c.req.param("commentId");
+  const comment = await c.env.DB.prepare("SELECT id FROM comments WHERE id = ? AND mod_id = ?")
+    .bind(commentId, modId)
+    .first();
+  if (!comment) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<CommentVoteRequest>().catch(() => null);
+  const voterId = body?.reviewerId?.trim();
+  const value = body?.value;
+  if (!voterId || voterId.length > MAX_VOTER_ID_LENGTH) {
+    return c.json({ error: "reviewerId is required" }, 400);
+  }
+  if (value !== -1 && value !== 0 && value !== 1) {
+    return c.json({ error: "value must be -1, 0, or 1" }, 400);
+  }
+
+  if (value === 0) {
+    await c.env.DB.prepare("DELETE FROM comment_votes WHERE comment_id = ? AND voter_id = ?").bind(commentId, voterId).run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO comment_votes (comment_id, voter_id, value, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (comment_id, voter_id) DO UPDATE SET value = excluded.value`
+    )
+      .bind(commentId, voterId, value, new Date().toISOString())
+      .run();
+  }
+
+  const agg = await c.env.DB.prepare("SELECT COALESCE(SUM(value), 0) as score FROM comment_votes WHERE comment_id = ?")
+    .bind(commentId)
+    .first<{ score: number }>();
+
+  return c.json({ score: agg?.score ?? 0, myVote: value });
 });
 
 // DELETE /api/mods/:modId/comments/:commentId — admin-only. Comments have
 // no owner/account concept at all (authorName is free text), so unlike the
 // mod/version deletes above this isn't a bypass of an existing owner-check
-// — it's the only way this route has ever been deletable.
+// — it's the only way this route has ever been deletable. Deletes the whole
+// reply subtree: the schema declares parent_id ON DELETE CASCADE, but D1
+// doesn't reliably apply FK actions in practice (see auth.ts's account
+// delete for the same caveat), so this walks descendants itself via a
+// recursive CTE instead of trusting the constraint.
 mods.delete("/:modId/comments/:commentId", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
   if (!modder.isAdmin) return c.json({ error: "forbidden — admin only" }, 403);
 
   const commentId = c.req.param("commentId");
-  const result = await c.env.DB.prepare("DELETE FROM comments WHERE id = ? RETURNING id").bind(commentId).first();
-  if (!result) return c.json({ error: "not found" }, 404);
+  const exists = await c.env.DB.prepare("SELECT id FROM comments WHERE id = ?").bind(commentId).first();
+  if (!exists) return c.json({ error: "not found" }, 404);
 
-  await logModerationAction(c.env, modder.id, "delete_comment", "comment", commentId);
+  const { results: descendants } = await c.env.DB.prepare(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT id FROM comments WHERE id = ?
+       UNION ALL
+       SELECT c.id FROM comments c JOIN subtree s ON c.parent_id = s.id
+     )
+     SELECT id FROM subtree`
+  )
+    .bind(commentId)
+    .all<{ id: number }>();
+
+  const ids = descendants.map((d) => d.id);
+  const placeholders = ids.map(() => "?").join(", ");
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM comment_votes WHERE comment_id IN (${placeholders})`).bind(...ids),
+    c.env.DB.prepare(`DELETE FROM comments WHERE id IN (${placeholders})`).bind(...ids),
+  ]);
+
+  await logModerationAction(c.env, modder.id, "delete_comment", "comment", `${commentId} (+${ids.length - 1} repl${ids.length - 1 === 1 ? "y" : "ies"})`);
   return c.body(null, 204);
 });
 

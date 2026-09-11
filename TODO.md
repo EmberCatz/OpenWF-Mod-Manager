@@ -85,10 +85,22 @@ testing) rather than letting them evaporate.
       (`apps/desktop/src-tauri/icons/`)
 - [ ] Tauri auto-updater, once builds are actually distributed as installers
       rather than launched in dev mode
+- [ ] Admin tool for the Category/tag taxonomy — mods now carry a
+      free-form `theme` field (Gameplay/Cosmetic/Cheat Tool/...,
+      `DEFAULT_MOD_THEMES` in `packages/shared/src/types.ts`) that expands
+      the same way `tags` already does, with no moderation on either. Needs
+      an Admin-tab view to rename/merge/delete a theme across every mod
+      using it, and to edit/remove/ban individual tags (ban = block future
+      use, like the existing IP-ban pattern in `routes/admin.ts`).
 
 ## Ideas, not committed to yet
 - [ ] Auto-detect a likely Warframe install path instead of requiring manual
       folder selection in Settings
+- [ ] Mod Settings tab — let players adjust exposed values in a `.pluto`
+      mod (e.g. "how many enemies does this spawn") from the app instead
+      of editing script source. On hold pending feedback from mod authors
+      (posted to Discord for input) — full design/format spec already
+      written: [docs/mod-settings-spec.md](docs/mod-settings-spec.md).
 - [ ] Collection/completion tracker (à la AlecaFrame) — a new tab showing
       every Warframe/weapon/quest against what the player has actually
       unlocked, with images, scoped to a self-hosted SpaceNinjaServer

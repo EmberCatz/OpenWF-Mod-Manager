@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDownIcon } from "../icons";
 
 interface MenuItem {
   label: React.ReactNode;
@@ -44,7 +45,7 @@ export default function SplitButton({ mainLabel, mainClassName, onMain, disabled
             onClick={() => setOpen((o) => !o)}
             aria-label="More options"
           >
-            ▾
+            <ChevronDownIcon className="btn-icon" />
           </button>
           {open && (
             <div className="split-button__menu">

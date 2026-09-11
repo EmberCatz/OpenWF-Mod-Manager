@@ -4,6 +4,7 @@ import { authenticate, hashToken } from "../auth";
 import { hashPassword, verifyPassword } from "../passwords";
 import { checkRateLimit, clientIp } from "../rateLimit";
 import { getSetting } from "../appSettings";
+import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
 
 export const auth = new Hono<{ Bindings: Env }>();
 
@@ -121,7 +122,24 @@ auth.post("/logout", async (c) => {
 auth.get("/me", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ id: modder.id, username: modder.name, isAdmin: modder.isAdmin });
+  return c.json({ id: modder.id, username: modder.name, avatarKey: modder.avatarKey, isAdmin: modder.isAdmin });
+});
+
+// PATCH /api/auth/me — { avatarKey }. Only the fixed-palette avatar is
+// self-editable here — name/username changes aren't supported (the name is
+// baked into every mod's `author` at upload time, see routes/mods.ts).
+auth.patch("/me", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const body = await c.req.json<{ avatarKey?: string }>().catch(() => null);
+  const avatarKey = body?.avatarKey;
+  if (!avatarKey || !AVATAR_KEYS.includes(avatarKey as (typeof AVATAR_KEYS)[number])) {
+    return c.json({ error: `avatarKey must be one of: ${AVATAR_KEYS.join(", ")}` }, 400);
+  }
+
+  await c.env.DB.prepare("UPDATE modders SET avatar_key = ? WHERE id = ?").bind(avatarKey, modder.id).run();
+  return c.json({ id: modder.id, username: modder.name, avatarKey, isAdmin: modder.isAdmin });
 });
 
 // DELETE /api/auth/me — deletes the account (sessions cascade). Refuses

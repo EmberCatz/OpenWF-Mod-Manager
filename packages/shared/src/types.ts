@@ -3,12 +3,40 @@
 
 export type ModCategory = "metadata-patch" | "pluto-script" | "other";
 
+// A thematic classification (Gameplay, Cosmetic, Cheat Tool, ...) distinct
+// from ModCategory above (which is really a content *type* — see how
+// Browse's sidebar labels its ModCategory filter "Type"). Not a fixed enum:
+// like `tags`, the set of themes in actual use can grow past this seed list
+// as mods are uploaded — this is just what Upload/Browse suggest first.
+export const DEFAULT_MOD_THEMES = [
+  "Gameplay",
+  "Cosmetic",
+  "Cheat Tool",
+  "Utility",
+  "Quality of Life",
+  "UI/HUD",
+  "Audio",
+  "Performance",
+];
+
+// A fixed palette of profile-picture choices — not custom uploads, see
+// docs/architecture.md's "images: external links only" reasoning and
+// modders.avatar_key in schema.sql. Rendered client-side as a solid-color
+// circle with the account's initial (components/Avatar.tsx); the key is
+// all that's actually stored.
+export const AVATAR_KEYS = ["amber", "crimson", "azure", "violet", "emerald", "slate", "rose", "cyan"] as const;
+export type AvatarKey = (typeof AVATAR_KEYS)[number];
+export const DEFAULT_AVATAR_KEY: AvatarKey = "amber";
+
 export interface Mod {
   id: string; // slug, e.g. "ultimate-database"
   name: string;
   author: string;
+  subAuthor: string | null; // optional co-creator/secondary contributor credit, free text
+  ownerId: string; // the uploading account's modder id — see routes/modders.ts's public profile lookup
   description: string;
   category: ModCategory;
+  theme: string; // thematic category, e.g. "Gameplay" — see DEFAULT_MOD_THEMES
   thumbnailUrl: string | null; // external link only — never hosted by this project, see docs/architecture.md
   thumbnailPosition: string; // CSS object-position, e.g. "50% 50%" — lets the uploader pick a focal point since the linked image can't actually be cropped/re-hosted
   screenshotUrls: string[]; // external links only, same reasoning
@@ -43,9 +71,15 @@ export interface ModWithVersions extends Mod {
 // (field name "metadata"); see apps/api/src/routes/mods.ts.
 export interface UploadMetadata {
   name: string;
+  // Ignored server-side — the mod's author is always set to the uploading
+  // account's own name (see routes/mods.ts's POST /), never client-supplied,
+  // so it can't be spoofed. Kept as a field so older callers/typed code
+  // don't break; send whatever, it's overwritten.
   author: string;
+  subAuthor?: string; // see Mod.subAuthor
   description: string;
   category: ModCategory;
+  theme?: string; // see Mod.theme — defaults to "Uncategorized" server-side if omitted
   version: string;
   changelog?: string;
   gameVersions?: string[]; // defaults to ["all"] server-side if omitted
@@ -66,20 +100,32 @@ export interface UpdateModMetadata {
   thumbnailPosition?: string;
   screenshotUrls?: string[];
   tags?: string[];
+  theme?: string;
+  subAuthor?: string | null;
 }
 
 export interface ApiError {
   error: string;
 }
 
-// A free-text comment left on a mod. No account system exists in this
-// project — authorName is just whatever the commenter typed (see
-// apps/desktop/src/settings.ts's commenterName), not a verified identity.
+// A free-text comment left on a mod — still no login required to post (see
+// apps/desktop/src/settings.ts's commenterName), authorName is just
+// whatever the commenter typed and isn't a verified identity. parentId
+// makes it a reply (Reddit-style nesting, built into a tree client-side
+// from the flat list GET /:id/comments returns). authorAccountId is a
+// best-effort match: the server resolves authorName against modders.name
+// and fills this in when one exists, purely so the UI can make the name a
+// profile link — it's a display convenience, not proof the commenter
+// controls that account.
 export interface Comment {
   id: number;
   modId: string;
+  parentId: number | null;
   authorName: string;
+  authorAccountId: string | null;
   body: string;
+  score: number; // net upvotes - downvotes
+  myVote: -1 | 0 | 1; // this install's own vote, via reviewerId — see routes/mods.ts's vote route
   createdAt: string; // ISO 8601
 }
 
@@ -101,4 +147,22 @@ export interface ReviewSummary {
   average: number; // 0 when count is 0
   count: number;
   myRating: number | null;
+}
+
+// POST /api/mods/:modId/comments/:commentId/vote body — value 0 removes an
+// existing vote (toggling an up/downvote off), same upsert-or-delete shape
+// reviews already use for reviewerId.
+export interface CommentVoteRequest {
+  reviewerId: string;
+  value: -1 | 0 | 1;
+}
+
+// GET /api/modders/:id — a creator's public profile (routes/modders.ts).
+// No auth required to read; this is the page a username link opens to.
+export interface ModderProfile {
+  id: string;
+  name: string;
+  avatarKey: string;
+  createdAt: string; // ISO 8601
+  mods: ModWithVersions[];
 }

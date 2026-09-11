@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ModWithVersions } from "@openwf-mod-manager/shared";
-import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
+import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
 import { fetchModList } from "../api";
 import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
@@ -10,9 +10,11 @@ import ModDetail from "../components/ModDetail";
 import SplitButton from "../components/SplitButton";
 import StarRating from "../components/StarRating";
 import ClampedText from "../components/ClampedText";
+import GameVersionPicker from "../components/GameVersionPicker";
+import AuthorLink from "../components/AuthorLink";
 import defaultThumbnail from "../assets/thumbnails/default-thumbnail.jpg";
 
-type ActionState = { status: "idle" | "working" | "done"; message?: string };
+type ActionState = { status: "idle" | "working" };
 type ViewMode = "list" | "grid";
 type SortKey = "downloads" | "name" | "new" | "updated" | "score";
 
@@ -89,7 +91,8 @@ export default function Browse() {
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
-  const [versionFilter, setVersionFilter] = useState("");
+  const [activeThemes, setActiveThemes] = useState<Set<string>>(new Set());
+  const [versionFilter, setVersionFilter] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [openModId, setOpenModId] = useState<string | null>(null);
   // Mod ids whose thumbnailUrl failed to actually load (dead link, or a
@@ -148,16 +151,27 @@ export default function Browse() {
     setPage(1);
   }
 
+  function toggleTheme(theme: string) {
+    setActiveThemes((s) => {
+      const next = new Set(s);
+      if (next.has(theme)) next.delete(theme);
+      else next.add(theme);
+      return next;
+    });
+    setPage(1);
+  }
+
   async function handleInstall(mod: ModWithVersions) {
     const version = mod.versions[0];
     if (!version) return;
     setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
     try {
       const message = await installVersion(mod, version);
-      setActions((s) => ({ ...s, [mod.id]: { status: "done", message } }));
+      toast.success(`${mod.name}: ${message}`);
       setInstalledVersion((v) => v + 1);
     } catch (e) {
       toast.error(String(e));
+    } finally {
       setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
     }
   }
@@ -168,9 +182,10 @@ export default function Browse() {
     setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
     try {
       const message = await downloadVersion(version);
-      setActions((s) => ({ ...s, [mod.id]: message ? { status: "done", message } : { status: "idle" } }));
+      if (message) toast.success(`${mod.name}: ${message}`);
     } catch (e) {
       toast.error(String(e));
+    } finally {
       setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
     }
   }
@@ -179,10 +194,11 @@ export default function Browse() {
     setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
     try {
       await uninstallMod(mod.id);
-      setActions((s) => ({ ...s, [mod.id]: { status: "done", message: "Uninstalled" } }));
+      toast.success(`${mod.name}: Uninstalled`);
       setInstalledVersion((v) => v + 1);
     } catch (e) {
       toast.error(String(e));
+    } finally {
       setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
     }
   }
@@ -202,13 +218,16 @@ export default function Browse() {
   if (mods.length === 0) return <p className="muted fade-in">No mods yet — check back soon.</p>;
 
   const allTags = [...new Set(mods.flatMap((m) => m.tags))].sort();
+  const allThemes = [...new Set([...DEFAULT_MOD_THEMES, ...mods.map((m) => m.theme).filter(Boolean)])].sort();
+  const isAnyVersion = versionFilter.length === 0 || versionFilter.includes(ALL_VERSIONS_TAG);
   const query = search.trim().toLowerCase();
   const visibleMods = mods.filter((m) => {
     if (activeTag && !m.tags.includes(activeTag)) return false;
     if (activeCategories.size > 0 && !activeCategories.has(m.category)) return false;
-    if (versionFilter) {
+    if (activeThemes.size > 0 && !activeThemes.has(m.theme)) return false;
+    if (!isAnyVersion) {
       const versions = m.versions[0]?.gameVersions ?? [];
-      if (!versions.includes(ALL_VERSIONS_TAG) && !versions.includes(versionFilter)) return false;
+      if (!versions.includes(ALL_VERSIONS_TAG) && !versions.some((v) => versionFilter.includes(v))) return false;
     }
     if (query && !`${m.name} ${m.description} ${m.author}`.toLowerCase().includes(query)) return false;
     return true;
@@ -233,34 +252,25 @@ export default function Browse() {
         </div>
 
         <div className="sidebar-section">
+          <h4 className="sidebar-section__title">Category</h4>
+          {allThemes.map((theme) => (
+            <label key={theme} className="sidebar-checkbox">
+              <input type="checkbox" checked={activeThemes.has(theme)} onChange={() => toggleTheme(theme)} />
+              {theme}
+            </label>
+          ))}
+        </div>
+
+        <div className="sidebar-section">
           <h4 className="sidebar-section__title">Game version</h4>
-          <input
-            type="text"
-            list="browse-version-options"
-            className="version-picker__search"
-            placeholder="Any version"
-            value={versionFilter}
-            onChange={(e) => {
-              setVersionFilter(e.target.value);
+          <GameVersionPicker
+            selected={versionFilter}
+            onChange={(v) => {
+              setVersionFilter(v);
               setPage(1);
             }}
+            allLabel="Any version"
           />
-          <datalist id="browse-version-options">
-            {GAME_VERSIONS.map((v) => (
-              <option key={v} value={v} />
-            ))}
-          </datalist>
-          {versionFilter && (
-            <button
-              className="tag-filter__chip"
-              onClick={() => {
-                setVersionFilter("");
-                setPage(1);
-              }}
-            >
-              Clear
-            </button>
-          )}
         </div>
 
         {allTags.length > 0 && (
@@ -296,45 +306,47 @@ export default function Browse() {
               setPage(1);
             }}
           />
-          <select
-            className="browse-toolbar__sort"
-            value={sortKey}
-            onChange={(e) => changeSortKey(e.target.value as SortKey)}
-            title="Sort by"
-          >
-            {SORT_KEYS.map((k) => (
-              <option key={k} value={k}>
-                Sort: {SORT_LABELS[k]}
-              </option>
-            ))}
-          </select>
-          <select
-            className="browse-toolbar__page-size"
-            value={pageSize}
-            onChange={(e) => changePageSize(Number(e.target.value))}
-            title="Mods per page"
-          >
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n} / page
-              </option>
-            ))}
-          </select>
-          <div className="view-toggle">
-            <button
-              className={`view-toggle__btn ${viewMode === "list" ? "view-toggle__btn--active" : ""}`}
-              onClick={() => changeViewMode("list")}
-              title="List view"
+          <div className="browse-toolbar__controls">
+            <select
+              className="browse-toolbar__sort"
+              value={sortKey}
+              onChange={(e) => changeSortKey(e.target.value as SortKey)}
+              title="Sort by"
             >
-              <ListIcon className="btn-icon" />
-            </button>
-            <button
-              className={`view-toggle__btn ${viewMode === "grid" ? "view-toggle__btn--active" : ""}`}
-              onClick={() => changeViewMode("grid")}
-              title="Grid view"
+              {SORT_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  Sort: {SORT_LABELS[k]}
+                </option>
+              ))}
+            </select>
+            <select
+              className="browse-toolbar__page-size"
+              value={pageSize}
+              onChange={(e) => changePageSize(Number(e.target.value))}
+              title="Mods per page"
             >
-              <GridIcon className="btn-icon" />
-            </button>
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n} / page
+                </option>
+              ))}
+            </select>
+            <div className="view-toggle">
+              <button
+                className={`view-toggle__btn ${viewMode === "list" ? "view-toggle__btn--active" : ""}`}
+                onClick={() => changeViewMode("list")}
+                title="List view"
+              >
+                <ListIcon className="btn-icon" />
+              </button>
+              <button
+                className={`view-toggle__btn ${viewMode === "grid" ? "view-toggle__btn--active" : ""}`}
+                onClick={() => changeViewMode("grid")}
+                title="Grid view"
+              >
+                <GridIcon className="btn-icon" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -386,28 +398,28 @@ export default function Browse() {
                         <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
                           {mod.name}
                         </button>
-                        <span className="mod-card__author">by {mod.author}</span>
+                        <span className="mod-card__author">
+                          by <AuthorLink name={mod.author} accountId={mod.ownerId} />
+                          {mod.subAuthor && <> · with {mod.subAuthor}</>}
+                        </span>
                         <div className="mod-card__grid-meta">
                           <span className="mod-card__rating-group" title={`${mod.reviewCount ?? 0} rating${(mod.reviewCount ?? 0) === 1 ? "" : "s"}`}>
                             <StarRating value={mod.averageRating ?? 0} className="star-rating--sm" />
-                            ({mod.reviewCount ?? 0})
+                            {mod.reviewCount ?? 0}
                           </span>
                           <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
-                          {isUpToDate && (
-                            <span className="badge badge--installed">
-                              <CheckCircleIcon className="btn-icon" />
-                            </span>
-                          )}
+                          {mod.theme && <span className="badge">{mod.theme}</span>}
                         </div>
                         <div className="mod-card__grid-meta">
                           <span className="mod-card__meta-stat" title={`${mod.downloadCount} downloads`}>
                             <DownloadIcon className="btn-icon" />
                             {formatCount(mod.downloadCount)}
                           </span>
-                          <span className="mod-card__meta-date">{formatModDate(mod)}</span>
                           <span className="mod-card__meta-stat" title={`${mod.commentCount ?? 0} comments`}>
-                            <CommentIcon className="btn-icon" />({mod.commentCount ?? 0})
+                            <CommentIcon className="btn-icon" />
+                            {mod.commentCount ?? 0}
                           </span>
+                          <span className="mod-card__meta-date">{formatModDate(mod)}</span>
                         </div>
                         <div className="mod-card__grid-actions">
                           {version ? (
@@ -425,7 +437,11 @@ export default function Browse() {
                                 ]}
                               />
                             ) : (
-                              <button className="button button--primary" disabled={working} onClick={onInstallOrDownload}>
+                              <button
+                                className={`button ${installedEntry ? "button--update" : autoInstallable ? "button--install" : "button--download"}`}
+                                disabled={working}
+                                onClick={onInstallOrDownload}
+                              >
                                 {working && <span className="spinner" />}
                                 {working ? "Working…" : installLabel}
                               </button>
@@ -434,9 +450,6 @@ export default function Browse() {
                             <span className="muted">No versions yet</span>
                           )}
                         </div>
-                        {action.status === "done" && action.message && (
-                          <span className="fade-in muted">{action.message}</span>
-                        )}
                       </div>
                     </li>
                   );
@@ -459,7 +472,10 @@ export default function Browse() {
                           <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
                             {mod.name}
                           </button>
-                          <span className="mod-card__author">by {mod.author}</span>
+                          <span className="mod-card__author">
+                            by <AuthorLink name={mod.author} accountId={mod.ownerId} />
+                            {mod.subAuthor && <> · with {mod.subAuthor}</>}
+                          </span>
                         </div>
                         <ClampedText className="mod-card__description" text={mod.description} lines={3} />
                         {mod.tags.length > 0 && (
@@ -481,18 +497,20 @@ export default function Browse() {
                         <div className="mod-card__footer">
                           <span className="mod-card__rating-group" title={`${mod.reviewCount ?? 0} rating${(mod.reviewCount ?? 0) === 1 ? "" : "s"}`}>
                             <StarRating value={mod.averageRating ?? 0} className="star-rating--sm" />
-                            ({mod.reviewCount ?? 0})
+                            {mod.reviewCount ?? 0}
                           </span>
                           <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
+                          {mod.theme && <span className="badge">{mod.theme}</span>}
                           {version && <span className="muted">{formatGameVersions(version.gameVersions)}</span>}
                           <span className="mod-card__meta-stat" title={`${mod.downloadCount} downloads`}>
                             <DownloadIcon className="btn-icon" />
                             {formatCount(mod.downloadCount)}
                           </span>
-                          <span className="mod-card__meta-date">{formatModDate(mod)}</span>
                           <span className="mod-card__meta-stat" title={`${mod.commentCount ?? 0} comments`}>
-                            <CommentIcon className="btn-icon" />({mod.commentCount ?? 0})
+                            <CommentIcon className="btn-icon" />
+                            {mod.commentCount ?? 0}
                           </span>
+                          <span className="mod-card__meta-date">{formatModDate(mod)}</span>
                           {isUpToDate && (
                             <span className="badge badge--installed">
                               <CheckCircleIcon className="btn-icon" /> Installed
@@ -501,7 +519,9 @@ export default function Browse() {
                           {version && <span className="mod-card__version">v{version.version}</span>}
                           {version && (
                             <button
-                              className={`button button--lg ${isUpToDate ? "button--reinstall" : ""}`}
+                              className={`button button--lg ${
+                                isUpToDate ? "button--reinstall" : installedEntry ? "button--update" : autoInstallable ? "button--install" : "button--download"
+                              }`}
                               disabled={working}
                               onClick={onInstallOrDownload}
                             >
@@ -510,13 +530,10 @@ export default function Browse() {
                               {working ? "Working…" : installLabel}
                             </button>
                           )}
-                          {autoInstallable && installedEntry && (
-                            <button className="button button--danger" disabled={working} onClick={() => handleUninstall(mod)}>
+                          {autoInstallable && installedEntry && isUpToDate && (
+                            <button className="button button--lg button--danger" disabled={working} onClick={() => handleUninstall(mod)}>
                               <TrashIcon className="btn-icon" /> Uninstall
                             </button>
-                          )}
-                          {action.status === "done" && action.message && (
-                            <span className="fade-in muted">{action.message}</span>
                           )}
                         </div>
                       </div>

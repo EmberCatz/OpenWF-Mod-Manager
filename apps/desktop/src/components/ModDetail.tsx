@@ -14,6 +14,7 @@ import StarRating from "./StarRating";
 import FilePreview from "./FilePreview";
 import CommentSection from "./CommentSection";
 import ReportButton from "./ReportButton";
+import AuthorLink from "./AuthorLink";
 
 interface ModDetailProps {
   modId: string;
@@ -23,7 +24,7 @@ interface ModDetailProps {
   onChanged: () => void;
 }
 
-type ActionState = { status: "idle" | "working" | "done" | "error"; message?: string };
+type ActionState = { status: "idle" | "working" };
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -107,11 +108,12 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
     setAction({ status: "working" });
     try {
       const message = await installVersion(mod, version);
-      setAction({ status: "done", message });
+      toast.success(`${mod.name}: ${message}`);
       setInstalledVersionState(version.version);
       onChanged();
     } catch (e) {
       toast.error(String(e));
+    } finally {
       setAction({ status: "idle" });
     }
   }
@@ -120,9 +122,10 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
     setAction({ status: "working" });
     try {
       const message = await downloadVersion(version);
-      setAction(message ? { status: "done", message } : { status: "idle" });
+      if (message && mod) toast.success(`${mod.name}: ${message}`);
     } catch (e) {
       toast.error(String(e));
+    } finally {
       setAction({ status: "idle" });
     }
   }
@@ -132,11 +135,12 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
     setAction({ status: "working" });
     try {
       await uninstallMod(mod.id);
-      setAction({ status: "done", message: "Uninstalled" });
+      toast.success(`${mod.name}: Uninstalled`);
       setInstalledVersionState(null);
       onChanged();
     } catch (e) {
       toast.error(String(e));
+    } finally {
       setAction({ status: "idle" });
     }
   }
@@ -171,7 +175,8 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
             <div className="mod-detail-left">
               <h2 className="mod-detail__title">{mod.name}</h2>
               <p className="muted">
-                by {mod.author} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
+                by <AuthorLink name={mod.author} accountId={mod.ownerId} />
+                {mod.subAuthor && <> · with {mod.subAuthor}</>} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
               </p>
               <div className="review-summary">
                 <StarRating value={reviewSummary?.myRating ?? reviewSummary?.average ?? 0} interactive onRate={handleRate} />
@@ -216,8 +221,6 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                   ))}
                 </div>
               )}
-
-              {action.status === "done" && action.message && <p className="fade-in muted">{action.message}</p>}
 
               <h3>Versions</h3>
               <ul className="version-history">

@@ -1,4 +1,12 @@
-import type { Comment, Mod, ModWithVersions, ReviewSummary, UpdateModMetadata, UploadMetadata } from "@openwf-mod-manager/shared";
+import type {
+  Comment,
+  Mod,
+  ModderProfile,
+  ModWithVersions,
+  ReviewSummary,
+  UpdateModMetadata,
+  UploadMetadata,
+} from "@openwf-mod-manager/shared";
 
 // Points at the deployed Worker (apps/api). Override for local dev with a
 // .env file (VITE_API_BASE_URL=http://127.0.0.1:8787) once wrangler dev is running.
@@ -138,13 +146,25 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return parsed as T;
 }
 
-export async function fetchComments(modId: string): Promise<Comment[]> {
-  const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/comments`);
+// voterId is the same per-install reviewerId (reviewerId.ts) used for star
+// ratings — passed along so the server can fill in each comment's myVote.
+export async function fetchComments(modId: string, voterId: string): Promise<Comment[]> {
+  const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/comments?voterId=${encodeURIComponent(voterId)}`);
   return readJsonOrThrow(res, "failed to load comments");
 }
 
-export async function postComment(modId: string, authorName: string, body: string): Promise<Comment> {
-  return postJson(`/api/mods/${modId}/comments`, { authorName, body });
+export async function postComment(modId: string, authorName: string, body: string, parentId: number | null): Promise<Comment> {
+  return postJson(`/api/mods/${modId}/comments`, { authorName, body, parentId });
+}
+
+// value 1/-1 sets this install's vote, 0 removes it.
+export async function voteOnComment(
+  modId: string,
+  commentId: number,
+  reviewerId: string,
+  value: -1 | 0 | 1
+): Promise<{ score: number; myVote: -1 | 0 | 1 }> {
+  return postJson(`/api/mods/${modId}/comments/${commentId}/vote`, { reviewerId, value });
 }
 
 export async function fetchReviewSummary(modId: string, reviewerId: string): Promise<ReviewSummary> {
@@ -159,6 +179,7 @@ export async function postReview(modId: string, reviewerId: string, rating: numb
 export interface Account {
   id: string;
   username: string;
+  avatarKey: string;
   isAdmin?: boolean;
 }
 
@@ -187,6 +208,17 @@ export async function fetchMe(token: string): Promise<Account> {
 
 export async function deleteAccount(token: string): Promise<void> {
   return authedDelete("/api/auth/me", token);
+}
+
+export async function updateAvatar(avatarKey: string, apiKey: string): Promise<Account> {
+  return authedJson("PATCH", "/api/auth/me", { avatarKey }, apiKey);
+}
+
+// GET /api/modders/:id — a creator's public profile, opened from any
+// username link across the app (see profileNav.ts / components/AuthorLink.tsx).
+export async function fetchModderProfile(id: string): Promise<ModderProfile> {
+  const res = await fetch(`${API_BASE_URL}/api/modders/${id}`);
+  return readJsonOrThrow(res, "failed to load profile");
 }
 
 // Best-effort popularity-counter ping — swallows its own errors so a slow

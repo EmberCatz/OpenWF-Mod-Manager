@@ -1,22 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ModCategory, ModWithVersions } from "@openwf-mod-manager/shared";
-import { ALL_VERSIONS_TAG, GAME_VERSION_GROUPS } from "@openwf-mod-manager/shared";
-import type { GameVersionGroup } from "@openwf-mod-manager/shared";
+import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
 import { addModVersion, fetchModList, uploadNewMod } from "../api";
 import { pickModFileToUpload, readFileBytes } from "../native";
 import { getApiKey } from "../settings";
+import { useAccount } from "../useAccount";
 import { toast } from "../toast";
 import TagInput from "../components/TagInput";
 import ThumbnailPreview from "../components/ThumbnailPreview";
 import ScreenshotPreviewList from "../components/ScreenshotPreviewList";
+import GameVersionPicker from "../components/GameVersionPicker";
 
 type Mode = "new" | "update";
 
+// Top N tags (by how many existing mods use them) shown as one-click chips
+// above the free-form TagInput, so an uploader can reach for a popular tag
+// without having to already know its exact spelling.
+const TOP_TAGS_SHOWN = 10;
+
 const initialNewModForm = {
   name: "",
-  author: "",
+  subAuthor: "",
   description: "",
   category: "metadata-patch" as ModCategory,
+  theme: "",
   version: "1.0.0",
   changelog: "",
   thumbnailUrl: "",
@@ -25,105 +32,8 @@ const initialNewModForm = {
   tags: [] as string[],
 };
 
-function GroupRow({ group, selected, isAll, onToggleGroup, onToggleVersion, forceOpen }: {
-  group: GameVersionGroup;
-  selected: string[];
-  isAll: boolean;
-  onToggleGroup: (group: GameVersionGroup) => void;
-  onToggleVersion: (v: string) => void;
-  forceOpen: boolean;
-}) {
-  const allSelected = !isAll && group.versions.every((v) => selected.includes(v));
-  const someSelected = !isAll && !allSelected && group.versions.some((v) => selected.includes(v));
-  const checkboxRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (checkboxRef.current) checkboxRef.current.indeterminate = someSelected;
-  }, [someSelected]);
-
-  return (
-    <details className="version-picker__group" open={forceOpen}>
-      <summary>
-        <input
-          ref={checkboxRef}
-          type="checkbox"
-          checked={allSelected}
-          onClick={(e) => e.stopPropagation()}
-          onChange={() => onToggleGroup(group)}
-        />
-        <span className="version-picker__group-title">{group.title}</span>
-        <span className="muted">({group.versions.length})</span>
-      </summary>
-      <div className="version-picker__group-versions">
-        {group.versions.map((v) => (
-          <label key={v} className="version-picker__row">
-            <input type="checkbox" checked={!isAll && selected.includes(v)} onChange={() => onToggleVersion(v)} />
-            <span>{v}</span>
-          </label>
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function GameVersionPicker({ selected, onChange }: { selected: string[]; onChange: (tags: string[]) => void }) {
-  const [search, setSearch] = useState("");
-  const isAll = selected.length === 0 || selected.includes(ALL_VERSIONS_TAG);
-
-  function toggleAll() {
-    onChange(isAll ? [] : [ALL_VERSIONS_TAG]);
-  }
-
-  function toggleVersion(v: string) {
-    const base = isAll ? [] : selected;
-    onChange(base.includes(v) ? base.filter((x) => x !== v) : [...base, v]);
-  }
-
-  function toggleGroup(group: GameVersionGroup) {
-    const base = isAll ? [] : selected;
-    const allSelected = group.versions.every((v) => base.includes(v));
-    onChange(allSelected ? base.filter((v) => !group.versions.includes(v)) : [...new Set([...base, ...group.versions])]);
-  }
-
-  const query = search.trim().toLowerCase();
-  const filteredGroups = query
-    ? GAME_VERSION_GROUPS.map((g) => ({
-        ...g,
-        versions: g.title.toLowerCase().includes(query) ? g.versions : g.versions.filter((v) => v.includes(query)),
-      })).filter((g) => g.versions.length > 0)
-    : GAME_VERSION_GROUPS;
-
-  return (
-    <div className="version-picker">
-      <input
-        type="text"
-        className="version-picker__search"
-        placeholder="Search versions or update name…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      <label className="version-picker__row version-picker__row--all">
-        <input type="checkbox" checked={isAll} onChange={toggleAll} />
-        <span>All Versions</span>
-      </label>
-      <div className="version-picker__groups">
-        {filteredGroups.map((group) => (
-          <GroupRow
-            key={group.title}
-            group={group}
-            selected={selected}
-            isAll={isAll}
-            onToggleGroup={toggleGroup}
-            onToggleVersion={toggleVersion}
-            forceOpen={!!query}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Upload() {
+  const { account } = useAccount();
   const [mode, setMode] = useState<Mode>("new");
   const [existingMods, setExistingMods] = useState<ModWithVersions[]>([]);
   const [selectedModId, setSelectedModId] = useState("");
@@ -148,6 +58,15 @@ export default function Upload() {
   }, []);
 
   const existingTags = [...new Set(existingMods.flatMap((m) => m.tags))].sort();
+  const themeSuggestions = [...new Set([...DEFAULT_MOD_THEMES, ...existingMods.map((m) => m.theme)])].sort();
+
+  const tagCounts = new Map<string, number>();
+  for (const m of existingMods) for (const t of m.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+  const topTags = [...tagCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_TAGS_SHOWN)
+    .map(([t]) => t);
+
   const previewScreenshotUrls = newModForm.screenshotUrls
     .split("\n")
     .map((s) => s.trim())
@@ -180,8 +99,8 @@ export default function Upload() {
       const fileName = filePath.split(/[\\/]/).pop() ?? "mod";
 
       if (mode === "new") {
-        if (!newModForm.name || !newModForm.author || !newModForm.version) {
-          toast.error("Name, author, and version are required");
+        if (!newModForm.name || !newModForm.version || !newModForm.theme) {
+          toast.error("Name, version, and category are required");
           setStatus({ kind: "idle" });
           return;
         }
@@ -192,9 +111,13 @@ export default function Upload() {
         const result = await uploadNewMod(
           {
             name: newModForm.name,
-            author: newModForm.author,
+            // Ignored server-side (always the logged-in account's own
+            // name) — see UploadMetadata.author's docstring.
+            author: account?.username ?? "",
+            subAuthor: newModForm.subAuthor || undefined,
             description: newModForm.description,
             category: newModForm.category,
+            theme: newModForm.theme,
             version: newModForm.version,
             changelog: newModForm.changelog || undefined,
             gameVersions,
@@ -254,14 +177,24 @@ export default function Upload() {
               </label>
               <label className="field">
                 <span>Author</span>
-                <input type="text" value={newModForm.author} onChange={(e) => setNewModForm({ ...newModForm, author: e.target.value })} />
+                <span className="hint">Always your own account — not editable here.</span>
+                <input type="text" value={account?.username ?? "Log in first"} disabled />
+              </label>
+              <label className="field">
+                <span>Sub-Author (optional)</span>
+                <span className="hint">Credit a co-creator or secondary contributor.</span>
+                <input
+                  type="text"
+                  value={newModForm.subAuthor}
+                  onChange={(e) => setNewModForm({ ...newModForm, subAuthor: e.target.value })}
+                />
               </label>
               <label className="field">
                 <span>Description</span>
                 <textarea value={newModForm.description} onChange={(e) => setNewModForm({ ...newModForm, description: e.target.value })} rows={3} />
               </label>
               <label className="field">
-                <span>Category</span>
+                <span>Type</span>
                 <select value={newModForm.category} onChange={(e) => setNewModForm({ ...newModForm, category: e.target.value as ModCategory })}>
                   <option value="metadata-patch">Metadata Patch</option>
                   <option value="pluto-script">Pluto Script</option>
@@ -299,10 +232,38 @@ export default function Upload() {
             </div>
 
             <div className="upload-card">
-              <h4 className="upload-card__title">Tags &amp; Compatibility</h4>
+              <h4 className="upload-card__title">Category, Tags &amp; Compatibility</h4>
+              <label className="field">
+                <span>Category</span>
+                <span className="hint">The mod's main category — pick one from the list.</span>
+                <select
+                  value={newModForm.theme}
+                  onChange={(e) => setNewModForm({ ...newModForm, theme: e.target.value })}
+                >
+                  <option value="" disabled>Select a category…</option>
+                  {themeSuggestions.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
               <label className="field">
                 <span>Tags (optional)</span>
                 <span className="hint">Free-form — type and press Enter. Suggestions are pulled from tags other mods already use.</span>
+                {topTags.length > 0 && (
+                  <div className="tag-filter">
+                    {topTags.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className="tag-filter__chip"
+                        disabled={newModForm.tags.includes(t)}
+                        onClick={() => setNewModForm({ ...newModForm, tags: [...new Set([...newModForm.tags, t])] })}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <TagInput tags={newModForm.tags} onChange={(tags) => setNewModForm({ ...newModForm, tags })} suggestions={existingTags} />
               </label>
               <label className="field">
@@ -348,13 +309,12 @@ export default function Upload() {
           <h4 className="upload-card__title">File</h4>
           <div className="field__row">
             <button className="button" onClick={pickFile}>Choose file…</button>
-            <span className="muted">{filePath ? filePath.split(/[\\/]/).pop() : "No file chosen"}</span>
+            <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
+              {status.kind === "working" && <span className="spinner" />}
+              {status.kind === "working" ? "Uploading…" : "Upload"}
+            </button>
           </div>
-
-          <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
-            {status.kind === "working" && <span className="spinner" />}
-            {status.kind === "working" ? "Uploading…" : "Upload"}
-          </button>
+          <span className="muted">{filePath ? filePath.split(/[\\/]/).pop() : "No file chosen"}</span>
           {status.kind === "done" && status.message && <p className="fade-in muted">{status.message}</p>}
         </div>
       </div>

@@ -20,10 +20,12 @@ import {
   setSplitViewEnabled,
   setWebuiPort,
 } from "../settings";
-import { deleteAccount, login, logout, signup } from "../api";
+import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
+import { deleteAccount, login, logout, signup, updateAvatar } from "../api";
 import { useAccount } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
+import Avatar from "../components/Avatar";
 
 type AuthMode = "login" | "signup";
 type AuthStatus = { kind: "idle" | "working" };
@@ -112,6 +114,16 @@ export default function Settings() {
     setApiKey("");
     setAccount(null);
     setConfirmingDelete(false);
+  }
+
+  async function handleAvatarSelect(avatarKey: string) {
+    const token = getApiKey();
+    if (!token) return;
+    try {
+      setAccount(await updateAvatar(avatarKey, token));
+    } catch (e) {
+      toast.error(String(e));
+    }
   }
 
   async function handleDeleteAccount() {
@@ -264,6 +276,19 @@ export default function Settings() {
                 <p>
                   Logged in as <strong>{account.username}</strong>
                 </p>
+                <span className="hint">Profile picture</span>
+                <div className="avatar-picker">
+                  {AVATAR_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      className={`avatar-picker__option ${account.avatarKey === key ? "avatar-picker__option--active" : ""}`}
+                      title={key}
+                      onClick={() => handleAvatarSelect(key)}
+                    >
+                      <Avatar name={account.username} avatarKey={key} size={28} />
+                    </button>
+                  ))}
+                </div>
                 <div className="field__row">
                   <button className="button" onClick={handleLogout}>Log out</button>
                   {!confirmingDelete && (
