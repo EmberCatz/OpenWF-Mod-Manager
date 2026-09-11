@@ -32,6 +32,13 @@ CLAUDE.local.md
 # Private operational notes not meant for the public repo
 ADMIN.local.md
 
+# Security audit docs — these contain working exploit PoCs (exact curl
+# commands, attack chains). Fine to keep locally for reference, never
+# meant for a public repo, especially while any finding might still be
+# undeployed in production.
+docs/security-audit-2026-09.md
+docs/redteam-audit-2026-09.md
+
 # Logs
 *.log
 npm-debug.log*

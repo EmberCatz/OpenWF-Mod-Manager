@@ -128,6 +128,49 @@ testing) rather than letting them evaporate.
         already proves the container's HTTP port is published to the
         host, same port a client-API integration would use.
 
+## Security
+
+Residual risk left after the two security passes (`docs/security-audit-2026-09.md`,
+`docs/redteam-audit-2026-09.md`) — things that are real but weren't fixable
+by an application-layer code change alone, or weren't in scope of either pass.
+
+- [ ] **Step-up re-auth for destructive admin actions.** A stolen admin
+      token (phishing, a compromised dev machine, a compromised npm
+      dependency reading it via `invoke("get_api_key")`) currently has full,
+      legitimate admin power the moment it's used directly against the API —
+      `requireAdmin()` (`routes/admin.ts`) can only check "is this a valid
+      admin token," not "is this really the admin." Require the account's
+      password again (a fresh, short-lived re-auth token) before kill-all-
+      sessions, maintenance mode, mass ban/delete — the handful of actions
+      where a stolen-but-valid token does the most damage. Pair with a
+      visible "active sessions" list in Settings so an admin can spot and
+      revoke a session they don't recognize.
+- [ ] **Uncompressed-size cap on zip installs.** `install_mod_zip`
+      (`src-tauri/src/commands.rs`) checks nothing about total uncompressed
+      size before extracting — a small download that decompresses to
+      gigabytes (a zip bomb) can fill a user's disk. Add a running total
+      during extraction and abort past a sane cap (e.g. 500MB), same spirit
+      as `MAX_FILE_BYTES` on the upload side.
+- [ ] **Scope down `GITHUB_TOKEN`.** Never audited by either security pass
+      (it's a Cloudflare Worker secret, not code) — confirm it's a
+      fine-grained PAT scoped to only this repo's `contents`/releases
+      permission, not a broad classic token. If it ever leaks, its blast
+      radius should be "can mess with this repo's releases," not "can act
+      as the account it belongs to" everywhere.
+- [ ] Ship the Tauri auto-updater (already tracked under "Up next") —
+      directly relevant here too: without it, a compromised first-party
+      dependency or any other post-release fix has no fast path to already-
+      installed clients short of everyone manually redownloading.
+- [ ] Periodic `npm audit` pass — `wrangler`/`sharp`/`miniflare` (dev
+      tooling, not shipped to users) currently carry known advisories, first
+      flagged during the security audit and left unresolved since they're
+      unrelated to the app itself.
+- [ ] Consider a custom domain in front of the Worker once one exists, to
+      unlock Cloudflare's zone-level Rate Limiting Rules — the current
+      D1-backed limiter (`rateLimit.ts`) is explicitly single-IP-scoped by
+      design and, per its own comment, "won't hold up against a real
+      distributed attack."
+
 ## Known correctness gaps
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of
       about.openwf.io/versions — won't pick up new patches until someone
