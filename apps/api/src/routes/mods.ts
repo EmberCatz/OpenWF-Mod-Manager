@@ -688,25 +688,26 @@ mods.delete("/:id", async (c) => {
   return c.body(null, 204);
 });
 
-// Appended to c.* wherever a comment needs its authorAccountId/score/myVote
-// filled in (the GET list below, and POST's response for the comment it
-// just created — a bare INSERT...RETURNING * row has none of these, so
-// POST re-queries through this same shape instead of returning that row
-// directly). The `?` is voterId, bound before mod_id/id in every caller.
+// Appended to c.* wherever a comment needs its score/myVote filled in (the
+// GET list below, and POST's response for the comment it just created — a
+// bare INSERT...RETURNING * row has neither, so POST re-queries through
+// this same shape instead of returning that row directly). The `?` is
+// voterId, bound before mod_id/id in every caller. author_account_id is
+// NOT computed here — it's a real column on comments, set once at insert
+// time (see POST below), so `c.*` already carries it.
 const COMMENT_ENRICHMENT_COLUMNS = `
-     (SELECT id FROM modders m2 WHERE m2.name = c.author_name COLLATE NOCASE LIMIT 1) as author_account_id,
      (SELECT COALESCE(SUM(value), 0) FROM comment_votes cv WHERE cv.comment_id = c.id) as score,
      (SELECT value FROM comment_votes cv2 WHERE cv2.comment_id = c.id AND cv2.voter_id = ?) as my_vote`;
 
 // GET /api/mods/:id/comments?voterId=... — flat list (the client builds the
 // reply tree from parentId, and applies its own Newest/Oldest/Top sort —
-// see Browse's CommentSection). No auth to post/read: this project has no
-// account system for regular users, only modder API keys for uploads (see
-// docs/architecture.md). authorName is whatever the commenter typed;
-// authorAccountId is a best-effort match against modders.name purely so
-// the UI can link it to a profile when one happens to exist (case-
-// insensitive, first match — modders.name has no UNIQUE constraint for
-// legacy API-key accounts, so this is "a" match, not a guaranteed one).
+// see Browse's CommentSection). No auth required to read: this project has
+// no account system for regular users, only modder API keys/sessions for
+// uploads (see docs/architecture.md). authorName is whatever the commenter
+// typed and is never verified; authorAccountId only links to a real
+// profile when the poster was actually authenticated as that modder at
+// post time (see POST below) — it is never inferred from authorName, which
+// would let anyone impersonate any modder just by typing their name.
 mods.get("/:id/comments", async (c) => {
   const modId = c.req.param("id");
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
@@ -727,11 +728,14 @@ mods.get("/:id/comments", async (c) => {
   return c.json(results.map(rowToComment) as Comment[]);
 });
 
-// POST /api/mods/:id/comments — { authorName, body, parentId? }. Deliberately
-// open, same billing-risk reasoning as the rest of this API: worst case is
-// text spam, not money — see docs/architecture.md § Security & billing-risk
-// notes. Links and basic profanity are rejected outright (contentFilters.ts)
-// rather than silently censored, so the poster knows to edit and resubmit.
+// POST /api/mods/:id/comments — { authorName, body, parentId? }. Posting
+// itself stays open to anyone (no login required), same billing-risk
+// reasoning as the rest of this API: worst case is text spam, not money —
+// see docs/architecture.md § Security & billing-risk notes. Links and
+// basic profanity are rejected outright (contentFilters.ts) rather than
+// silently censored, so the poster knows to edit and resubmit. Auth is
+// optional and used only to decide authorAccountId (see below) — an
+// invalid/missing token just means the comment posts unlinked, not a 401.
 mods.post("/:id/comments", async (c) => {
   if (await getSetting(c.env, "comments_disabled")) {
     return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
@@ -770,21 +774,23 @@ mods.post("/:id/comments", async (c) => {
     parentId = body.parentId;
   }
 
+  // Optional — a missing/invalid token just means an anonymous post, not a
+  // rejection. When present, the comment is linked to the authenticated
+  // modder's own account regardless of what authorName says, so a logged-in
+  // user can't be impersonated by someone else typing their name, and
+  // can't impersonate someone else by typing a different one either.
+  const modder = await authenticate(c);
+  const authorAccountId = modder?.id ?? null;
+
   const now = new Date().toISOString();
   const result = await c.env.DB.prepare(
-    "INSERT INTO comments (mod_id, parent_id, author_name, body, created_at) VALUES (?, ?, ?, ?, ?) RETURNING *"
+    "INSERT INTO comments (mod_id, parent_id, author_name, author_account_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
   )
-    .bind(modId, parentId, authorName, commentBody, now)
+    .bind(modId, parentId, authorName, authorAccountId, commentBody, now)
     .first<any>();
 
-  // A brand-new comment can't have any votes yet, so score/myVote are
-  // always 0 — only authorAccountId needs an actual lookup (same
-  // best-effort name match GET's listing uses).
-  const authorAccount = await c.env.DB.prepare("SELECT id FROM modders WHERE name = ? COLLATE NOCASE LIMIT 1")
-    .bind(authorName)
-    .first<{ id: string }>();
-
-  return c.json(rowToComment({ ...result, author_account_id: authorAccount?.id ?? null, score: 0, my_vote: 0 }), 201);
+  // A brand-new comment can't have any votes yet — score/myVote are always 0.
+  return c.json(rowToComment({ ...result, score: 0, my_vote: 0 }), 201);
 });
 
 // POST /api/mods/:modId/comments/:commentId/vote — { reviewerId, value }.

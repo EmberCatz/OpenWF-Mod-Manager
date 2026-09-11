@@ -196,7 +196,7 @@ export default function CommentSection({ modId }: { modId: string }) {
     if (!authorName.trim() || !commentBody.trim()) return;
     setPosting(true);
     try {
-      const comment = await postComment(modId, authorName.trim(), commentBody.trim(), parentId);
+      const comment = await postComment(modId, authorName.trim(), commentBody.trim(), parentId, getApiKey() ?? undefined);
       setComments((c) => [...c, normalizeComment(comment)]);
       setCommenterName(authorName.trim());
       onDone();

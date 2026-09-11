@@ -129,10 +129,19 @@ export async function deleteModVersion(modId: string, version: string, apiKey: s
   return authedDelete(`/api/mods/${modId}/versions/${encodeURIComponent(version)}`, apiKey);
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+// apiKey is optional here (unlike authedJson below, which requires one) —
+// most POSTs through this helper (reviews, votes, reports) have no account
+// concept at all. When a caller does pass one (postComment, for a logged-in
+// user), it's sent via the Tauri HTTP plugin so it actually reaches the
+// server as a real Authorization header the same way authed* calls do.
+async function postJson<T>(path: string, body: unknown, apiKey?: string): Promise<T> {
+  const doFetch = apiKey ? (await import("@tauri-apps/plugin-http")).fetch : fetch;
+  const res = await doFetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
     body: JSON.stringify(body),
   });
   const rawBody = await res.text();
@@ -153,8 +162,17 @@ export async function fetchComments(modId: string, voterId: string): Promise<Com
   return readJsonOrThrow(res, "failed to load comments");
 }
 
-export async function postComment(modId: string, authorName: string, body: string, parentId: number | null): Promise<Comment> {
-  return postJson(`/api/mods/${modId}/comments`, { authorName, body, parentId });
+// apiKey is optional — pass the logged-in user's token (if any) so the
+// server can link authorAccountId to their real account (see routes/mods.ts);
+// omit it to post anonymously, same as before.
+export async function postComment(
+  modId: string,
+  authorName: string,
+  body: string,
+  parentId: number | null,
+  apiKey?: string
+): Promise<Comment> {
+  return postJson(`/api/mods/${modId}/comments`, { authorName, body, parentId }, apiKey);
 }
 
 // value 1/-1 sets this install's vote, 0 removes it.

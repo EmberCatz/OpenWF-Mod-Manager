@@ -70,12 +70,13 @@ CREATE INDEX IF NOT EXISTS idx_mods_category ON mods (category);
 CREATE INDEX IF NOT EXISTS idx_mods_theme ON mods (theme);
 
 CREATE TABLE IF NOT EXISTS comments (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    mod_id      TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
-    parent_id   INTEGER REFERENCES comments(id) ON DELETE CASCADE, -- NULL = top-level; a reply otherwise (Reddit-style nesting). D1 doesn't reliably enforce ON DELETE actions (see routes/auth.ts's account-delete comment) — the admin delete route walks + deletes descendants itself, this is documentation of intent
-    author_name TEXT NOT NULL,
-    body        TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    mod_id            TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
+    parent_id         INTEGER REFERENCES comments(id) ON DELETE CASCADE, -- NULL = top-level; a reply otherwise (Reddit-style nesting). D1 doesn't reliably enforce ON DELETE actions (see routes/auth.ts's account-delete comment) — the admin delete route walks + deletes descendants itself, this is documentation of intent
+    author_name       TEXT NOT NULL,
+    author_account_id TEXT REFERENCES modders(id), -- set at insert time only when the poster was actually authenticated as this modder (see routes/mods.ts POST /:id/comments) — never derived from author_name, which is unverified free text anyone can type
+    body              TEXT NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_mod_id ON comments (mod_id);

@@ -7,7 +7,7 @@ Read-only audit across three layers: Tauri/native desktop, Cloudflare Worker/D1 
 | # | Finding | Location | Status |
 |---|---|---|---|
 | 1 | No React Error Boundary anywhere in the app — a single malformed record (e.g. a mod with `tags: null`) throws uncaught during render and crashes the entire webview to a blank white screen. | `apps/desktop/src/main.tsx`, `App.tsx` | **Done** |
-| 2 | Comment author impersonation — `POST /:id/comments` auto-links `authorAccountId` by case-insensitive name match against `modders.name`; anyone can type an existing modder's/admin's display name and have their comment render as that account. | `apps/api/src/routes/mods.ts:735-761` | Open |
+| 2 | Comment author impersonation — `POST /:id/comments` auto-links `authorAccountId` by case-insensitive name match against `modders.name`; anyone can type an existing modder's/admin's display name and have their comment render as that account. | `apps/api/src/routes/mods.ts:735-761` | **Done** |
 | 3 | Auth token stored in plaintext `localStorage` + Tauri CSP fully disabled (`security.csp: null`) — combined, a single future XSS becomes a full account-takeover primitive with nothing to contain it. | `apps/desktop/src/settings.ts:59-65`, `apps/desktop/src-tauri/tauri.conf.json:22-24` | Open |
 | 4 | Unrestricted file read/write Tauri IPC commands (`read_file_bytes`/`write_file_bytes`) accept a raw path with no allowlist/containment check. Not reachable by untrusted input today, but a live arbitrary-file-read/write primitive behind the IPC boundary. | `apps/desktop/src-tauri/src/commands.rs:10-21` | Open |
 
@@ -46,7 +46,7 @@ Read-only audit across three layers: Tauri/native desktop, Cloudflare Worker/D1 
 ## 5. Concrete Action Plan & Next Steps
 
 1. **Add a top-level `ErrorBoundary`** wrapping `<App/>` in `main.tsx`. *(Done — see below)*
-2. Fix comment impersonation: require exact case-sensitive match, or only auto-link when the poster supplies a valid API key for that modder.
+2. **Fix comment impersonation.** *(Done — `author_account_id` is now a real column on `comments`, set once at insert time only when the poster was authenticated as that modder; never derived from the typed `authorName`. Migration `0015_comment_author_account_id.sql`. Verified locally: an unauthenticated post typing a real modder's name gets `authorAccountId: null`; an authenticated post links to the real account regardless of what name was typed.)*
 3. Add Zod validation to `api.ts`, starting with `fetchModList`, `fetchMod`, `fetchComments`.
 4. Harden `handleVote` in `CommentSection.tsx` with a request-id/cancellation guard.
 5. Move the API key to `tauri-plugin-store`/OS keychain, and set an actual `security.csp` in `tauri.conf.json`.
