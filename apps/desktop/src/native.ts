@@ -73,3 +73,20 @@ export async function listZipTextEntries(zipBytes: ArrayBuffer): Promise<ZipText
     zipBytes: Array.from(new Uint8Array(zipBytes)),
   });
 }
+
+// The auth token (API key / login session token) lives in the OS keychain
+// (Windows Credential Manager / macOS Keychain / Linux Secret Service),
+// not localStorage — see commands.rs's rationale. There's no bulk "read
+// everything" API to it the way localStorage has, only these three named
+// commands.
+export async function getApiKeyNative(): Promise<string | null> {
+  return invoke<string | null>("get_api_key");
+}
+
+export async function setApiKeyNative(key: string): Promise<void> {
+  await invoke("set_api_key", { key });
+}
+
+export async function clearApiKeyNative(): Promise<void> {
+  await invoke("clear_api_key");
+}

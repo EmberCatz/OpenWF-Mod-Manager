@@ -78,7 +78,7 @@ export default function Upload() {
   }
 
   async function submit() {
-    const apiKey = getApiKey();
+    const apiKey = await getApiKey();
     if (!apiKey) {
       toast.error("Set your API key in Settings first");
       return;

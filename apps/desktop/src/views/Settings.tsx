@@ -3,6 +3,7 @@ import { pickFolder } from "../native";
 import {
   DEFAULT_BOOTSTRAPPER_PORT,
   DEFAULT_WEBUI_PORT,
+  clearApiKey,
   getApiKey,
   getBootstrapperPort,
   getMetadataPatchesPath,
@@ -98,7 +99,7 @@ export default function Settings() {
     setAuthStatus({ kind: "working" });
     try {
       const result = authMode === "signup" ? await signup(authUsername, authPassword) : await login(authUsername, authPassword);
-      setApiKey(result.token);
+      await setApiKey(result.token);
       await refreshAccount();
       setAuthPassword("");
       setAuthStatus({ kind: "idle" });
@@ -109,15 +110,15 @@ export default function Settings() {
   }
 
   async function handleLogout() {
-    const token = getApiKey();
+    const token = await getApiKey();
     if (token) await logout(token);
-    setApiKey("");
+    await clearApiKey();
     setAccount(null);
     setConfirmingDelete(false);
   }
 
   async function handleAvatarSelect(avatarKey: string) {
-    const token = getApiKey();
+    const token = await getApiKey();
     if (!token) return;
     try {
       setAccount(await updateAvatar(avatarKey, token));
@@ -127,12 +128,12 @@ export default function Settings() {
   }
 
   async function handleDeleteAccount() {
-    const token = getApiKey();
+    const token = await getApiKey();
     if (!token) return;
     setAuthStatus({ kind: "working" });
     try {
       await deleteAccount(token);
-      setApiKey("");
+      await clearApiKey();
       setAccount(null);
       setConfirmingDelete(false);
       setAuthStatus({ kind: "idle" });

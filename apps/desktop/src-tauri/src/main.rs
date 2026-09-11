@@ -14,6 +14,9 @@ fn main() {
             commands::install_mod_zip,
             commands::list_zip_text_entries,
             commands::uninstall_files,
+            commands::get_api_key,
+            commands::set_api_key,
+            commands::clear_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the OpenWF Mod Manager");

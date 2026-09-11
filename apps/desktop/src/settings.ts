@@ -1,11 +1,15 @@
-// Local-only app settings (install folders, API key), persisted in this
+// Local-only app settings (install folders, etc.), persisted in this
 // Tauri window's own webview storage — never sent anywhere, and separate
-// per machine/install by design.
+// per machine/install by design. The one exception is the API key/session
+// token, which is sensitive enough to warrant the OS keychain instead of
+// localStorage (see native.ts / src-tauri/src/commands.rs) — its getters
+// and setters below are async for that reason, unlike everything else here.
+
+import { clearApiKeyNative, getApiKeyNative, setApiKeyNative } from "./native";
 
 const KEYS = {
   metadataPatchesPath: "owmm.metadataPatchesPath",
   scriptsPath: "owmm.scriptsPath",
-  apiKey: "owmm.apiKey",
   commenterName: "owmm.commenterName",
   bootstrapperPort: "owmm.bootstrapperPort",
   webuiPort: "owmm.webuiPort",
@@ -56,12 +60,16 @@ export function setScriptsPath(path: string): void {
   localStorage.setItem(KEYS.scriptsPath, path);
 }
 
-export function getApiKey(): string | null {
-  return localStorage.getItem(KEYS.apiKey);
+export async function getApiKey(): Promise<string | null> {
+  return getApiKeyNative();
 }
 
-export function setApiKey(key: string): void {
-  localStorage.setItem(KEYS.apiKey, key);
+export async function setApiKey(key: string): Promise<void> {
+  await setApiKeyNative(key);
+}
+
+export async function clearApiKey(): Promise<void> {
+  await clearApiKeyNative();
 }
 
 export function getBootstrapperPort(): number {

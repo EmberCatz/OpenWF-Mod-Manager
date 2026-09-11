@@ -149,7 +149,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   // not just the mod's owner (see routes/mods.ts), so this reuses the same
   // client function My Mods' owner-delete button uses.
   async function handleAdminDelete() {
-    const apiKey = getApiKey();
+    const apiKey = await getApiKey();
     if (!mod || !apiKey) return;
     setAdminBusy(true);
     try {

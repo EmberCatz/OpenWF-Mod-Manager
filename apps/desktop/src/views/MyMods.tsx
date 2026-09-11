@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Mod, ModWithVersions } from "@openwf-mod-manager/shared";
 import { deleteMod, deleteModVersion, fetchMyMods } from "../api";
-import { getApiKey } from "../settings";
+import { useApiKey } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
 import EditModForm from "../components/EditModForm";
@@ -10,7 +10,7 @@ import EditModForm from "../components/EditModForm";
 // session or an older API key, both work the same way here (see
 // docs/architecture.md § Accounts).
 export default function MyMods() {
-  const apiKey = getApiKey();
+  const apiKey = useApiKey();
   const [mods, setMods] = useState<ModWithVersions[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

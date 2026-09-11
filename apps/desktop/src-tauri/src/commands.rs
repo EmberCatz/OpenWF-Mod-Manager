@@ -2,6 +2,41 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+// The auth token (an API key or login session token) used to be kept in the
+// webview's localStorage, trivially readable by any script that ever runs
+// in that context (a supply-chain-compromised dependency, a future XSS).
+// The OS keychain isn't reachable via a generic DOM API — only through
+// these two named commands — so exfiltrating it requires specifically
+// knowing to call get_api_key, not just grepping window.localStorage.
+const KEYRING_SERVICE: &str = "io.openwf.modmanager";
+const KEYRING_USER: &str = "api-key";
+
+fn api_key_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_api_key() -> Result<Option<String>, String> {
+    match api_key_entry()?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn set_api_key(key: String) -> Result<(), String> {
+    api_key_entry()?.set_password(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_api_key() -> Result<(), String> {
+    match api_key_entry()?.delete_password() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 // Both endpoints exist so the frontend never touches the filesystem
 // directly (Tauri's fs-plugin scope rules only cover paths granted through
 // its own APIs) — the user picks paths via the native dialog plugin, and

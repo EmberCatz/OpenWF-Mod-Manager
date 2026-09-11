@@ -201,7 +201,7 @@ export default function CommentSection({ modId }: { modId: string }) {
     if (!authorName.trim() || !commentBody.trim()) return;
     setPosting(true);
     try {
-      const comment = await postComment(modId, authorName.trim(), commentBody.trim(), parentId, getApiKey() ?? undefined);
+      const comment = await postComment(modId, authorName.trim(), commentBody.trim(), parentId, (await getApiKey()) ?? undefined);
       setComments((c) => [...c, normalizeComment(comment)]);
       setCommenterName(authorName.trim());
       onDone();
@@ -240,7 +240,7 @@ export default function CommentSection({ modId }: { modId: string }) {
   }
 
   async function handleAdminDelete(commentId: number) {
-    const apiKey = getApiKey();
+    const apiKey = await getApiKey();
     if (!apiKey) return;
     setDeletingId(commentId);
     try {

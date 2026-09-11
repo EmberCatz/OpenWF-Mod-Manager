@@ -18,8 +18,7 @@ import {
   type BannedIp,
   type SiteSettings,
 } from "../api";
-import { getApiKey } from "../settings";
-import { useAccount } from "../useAccount";
+import { useAccount, useApiKey } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
 
@@ -36,7 +35,7 @@ const SECTIONS: { id: Section; label: string }[] = [
 // also 403s server-side regardless (see routes/admin.ts) — this view never
 // has to be the only thing standing between a non-admin and these actions.
 export default function Admin() {
-  const apiKey = getApiKey();
+  const apiKey = useApiKey();
   const { account } = useAccount();
   const [section, setSection] = useState<Section>("users");
 

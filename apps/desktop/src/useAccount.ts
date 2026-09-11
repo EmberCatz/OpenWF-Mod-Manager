@@ -11,7 +11,7 @@ export function useAccount() {
   const [accountLoading, setAccountLoading] = useState(true);
 
   const refreshAccount = useCallback(async () => {
-    const token = getApiKey();
+    const token = await getApiKey();
     if (!token) {
       setAccount(null);
       setAccountLoading(false);
@@ -32,4 +32,25 @@ export function useAccount() {
   }, [refreshAccount]);
 
   return { account, accountLoading, refreshAccount, setAccount };
+}
+
+// Resolves the raw stored API key/session token itself, for the couple of
+// call sites (Admin, My Mods) that need the token directly to make authed
+// requests rather than the Account it resolves to. Same fetch-on-mount
+// shape as useAccount above — starts null, then flips to the real value
+// (or stays null if logged out) once the keychain read resolves.
+export function useApiKey() {
+  const [apiKey, setApiKeyState] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getApiKey().then((key) => {
+      if (!cancelled) setApiKeyState(key);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return apiKey;
 }
