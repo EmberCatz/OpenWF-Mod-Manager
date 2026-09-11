@@ -78,6 +78,27 @@ function fileExtension(name: string): string {
   return i === -1 ? "" : name.slice(i).toLowerCase();
 }
 
+// Extension checks alone accept any bytes as long as the filename ends in
+// .zip/.pluto/.txt — a renamed binary (an .exe, say) sails straight through
+// and gets redistributed via a public GitHub Release URL. This sniffs the
+// actual content against what the extension claims: a real zip signature
+// for .zip, valid UTF-8 text for the plain-text script extensions. Not a
+// full antivirus scan — just closes the specific rename trick.
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]; // "PK\x03\x04", the zip local-file-header signature
+
+async function looksLikeValidUpload(file: File, extension: string): Promise<boolean> {
+  if (extension === ".zip") {
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    return ZIP_MAGIC.every((b, i) => head[i] === b);
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(await file.arrayBuffer());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Thumbnails/screenshots are external links only — this project never
 // stores or serves the image bytes itself (see docs/architecture.md,
 // "Images: external links only"). This just guards against non-http(s)
@@ -443,6 +464,9 @@ mods.post("/", async (c) => {
   if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
     return c.json({ error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted` }, 400);
   }
+  if (!(await looksLikeValidUpload(file, fileExtension(file.name)))) {
+    return c.json({ error: "file content doesn't match its extension" }, 400);
+  }
 
   let metadata: UploadMetadata;
   try {
@@ -572,6 +596,9 @@ mods.post("/:id/versions", async (c) => {
   }
   if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
     return c.json({ error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted` }, 400);
+  }
+  if (!(await looksLikeValidUpload(file, fileExtension(file.name)))) {
+    return c.json({ error: "file content doesn't match its extension" }, 400);
   }
 
   let metadata: Pick<UploadMetadata, "version" | "changelog" | "gameVersions">;

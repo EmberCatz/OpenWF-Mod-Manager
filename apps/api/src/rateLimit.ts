@@ -26,18 +26,26 @@ export async function checkRateLimit(
   windowSeconds: number
 ): Promise<boolean> {
   const cutoff = new Date(Date.now() - windowSeconds * 1000).toISOString();
+  const now = new Date().toISOString();
 
-  const row = await c.env.DB.prepare(
-    "SELECT COUNT(*) as count FROM rate_limit_hits WHERE bucket = ? AND key = ? AND created_at > ?"
-  )
-    .bind(bucket, key, cutoff)
-    .first<{ count: number }>();
+  // Insert-then-count as a single atomic batch — D1 runs a batch as one
+  // implicit transaction, serialized against every other write to this
+  // database. A separate SELECT-then-INSERT (the previous shape here) is
+  // a TOCTOU race: N concurrent callers can all read the same pre-insert
+  // count and all pass the check, multiplying the effective limit by
+  // however many requests fire in parallel. Batching closes it — each
+  // caller's own hit is durably recorded before either count is read back,
+  // so a later caller in the same race always sees the earlier one's hit.
+  const [, countResult] = await c.env.DB.batch<{ count: number }>([
+    c.env.DB.prepare("INSERT INTO rate_limit_hits (bucket, key, created_at) VALUES (?, ?, ?)").bind(bucket, key, now),
+    c.env.DB.prepare("SELECT COUNT(*) as count FROM rate_limit_hits WHERE bucket = ? AND key = ? AND created_at > ?").bind(
+      bucket,
+      key,
+      cutoff
+    ),
+  ]);
 
-  if ((row?.count ?? 0) >= limit) return false;
-
-  await c.env.DB.prepare("INSERT INTO rate_limit_hits (bucket, key, created_at) VALUES (?, ?, ?)")
-    .bind(bucket, key, new Date().toISOString())
-    .run();
+  const count = countResult.results[0]?.count ?? 1;
 
   // Opportunistic cleanup so the table doesn't grow forever, without
   // needing a separate cron trigger — cheap, and only runs occasionally.
@@ -46,5 +54,9 @@ export async function checkRateLimit(
     await c.env.DB.prepare("DELETE FROM rate_limit_hits WHERE created_at < ?").bind(pruneCutoff).run();
   }
 
-  return true;
+  // Every attempt is now recorded, even ones that end up rejected below —
+  // a deliberate change from before: a caller sitting at/over the limit
+  // and retrying while blocked should keep counting against their window,
+  // not get a free pass because their earlier attempts weren't recorded.
+  return count <= limit;
 }
