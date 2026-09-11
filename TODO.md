@@ -132,6 +132,35 @@ testing) rather than letting them evaporate.
       - Docker doesn't complicate reachability — the Server WebUI tab
         already proves the container's HTTP port is published to the
         host, same port a client-API integration would use.
+- [ ] Mod conflict/dependency declarations — nothing today checks whether
+      two installed mods write to the same file, or lets a mod declare
+      "requires X" / "conflicts with Y." Fine at today's catalog size;
+      starts to matter once there are enough overlapping cosmetic mods for
+      the same slot that silent overwrite-on-install becomes a real
+      support headache.
+- [ ] Orphan-file scan — `installed.ts` only knows what *this app* wrote to
+      disk. Files someone dropped in manually (the old Discord-link
+      workflow this app exists to replace) are invisible to it. A "scan
+      the Metadata Patches/Scripts folders, tell me what's untracked, let
+      me adopt or remove it" pass would smooth over migrating existing
+      installs.
+- [ ] Update notifications for installed mods — installed-state and full
+      version history both already exist, but nothing surfaces "3 of your
+      installed mods have a newer version" anywhere in Browse/My Mods; you
+      have to open each mod's detail view to find out.
+- [ ] Author analytics — `download_count` and `reviews` already track
+      totals; there's no trend-over-time view (downloads/ratings by week)
+      for someone who's uploaded a mod, which is the more useful shape of
+      that same data for an author deciding whether an update helped.
+- [ ] Author reply / pinned comment on a mod — a small extension of the
+      existing threaded comments + voting (`CommentSection.tsx`), not a
+      new subsystem: let the mod's owner post a reply that's visually
+      distinguished, for responding to a bug report in-thread.
+- [ ] Snapshot/restore of the Warframe install folders before an install —
+      today's uninstall only removes exactly what *that mod's* install
+      wrote (by design), so there's no generic "put my install back to how
+      it was before I started modding" safety net. Matters more here than
+      in a typical mod manager since installs patch client files directly.
 
 ## Security
 
