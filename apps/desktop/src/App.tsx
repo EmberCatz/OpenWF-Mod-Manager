@@ -57,8 +57,11 @@ export default function App() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`tab ${activeTab === tab.id ? "tab--active" : ""}`}
-            onClick={() => setActiveTab(tab.id)}
+            className={`tab ${activeTab === tab.id && !profileAccountId ? "tab--active" : ""}`}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setProfileAccountId(null); // a profile open from any AuthorLink overrides the tab view below — clicking a tab must close it, or the click looks like a no-op
+            }}
           >
             {tab.label}
           </button>
