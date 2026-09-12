@@ -200,6 +200,31 @@ testing) rather than letting them evaporate.
 ## Up next
 - [ ] Tauri auto-updater, once builds are actually distributed as installers
       rather than launched in dev mode
+- [ ] Header logo + remove the accent line — `.app > h1` (`styles.css`) has
+      a `border-left: 4px solid var(--accent)` gold bar; drop it and put
+      the app's icon to the left of the title text in `App.tsx`. A source
+      image already exists (`apps/desktop/src-tauri/icons/source.png`,
+      also used for `.github/assets/logo.png`) — `src/assets/logos/`
+      exists but is empty, presumably where a header-sized export belongs.
+- [ ] Grid-view title hover zone — the mouseover/click hit-area on a mod's
+      name in grid cards (`.mod-card__name` / `.mod-card__thumb-overlay-
+      title` in `components/ModCard.tsx`) doesn't line up with the visible
+      text. Needs a look before deciding the fix — hit-area padding vs.
+      overlap with the thumbnail-title button that only renders when
+      there's no thumbnail.
+- [ ] "Uninstall all" button on Installed Mods — mirrors the existing
+      "Update all" banner action already in `views/InstalledMods.tsx`.
+- [ ] Restrict image URLs to Imgur only — `thumbnailUrl`/`screenshotUrls`
+      currently accept any http(s) URL (`isHttpUrl`/`validateScreenshotUrls`
+      in `routes/mods.ts`); narrow both the client-side preview components
+      (`ThumbnailPreview.tsx`, `ScreenshotPreviewList.tsx`) and the server
+      validation to imgur.com links only.
+- [ ] Disallow links in every server-saved, publicly-displayed text field —
+      `containsLink()` (`contentFilters.ts`) currently only guards a
+      comment's body/author name (`POST /:id/comments`). Mod name,
+      description, sub-author, tags, and theme all go through
+      `POST /api/mods` / `PATCH /api/mods/:id` with no link check at all —
+      extend it there too.
 
 ## Ideas, not committed to yet
 - [ ] Mod Settings tab — let players adjust exposed values in a `.pluto`
@@ -246,6 +271,51 @@ testing) rather than letting them evaporate.
       wrote (by design), so there's no generic "put my install back to how
       it was before I started modding" safety net. Matters more here than
       in a typical mod manager since installs patch client files directly.
+- [ ] Markdown/rich-text mod descriptions — `mods.description` is plain
+      TEXT rendered as-is (`<p>{mod.description}</p>` in `ModDetail.tsx`).
+      Needs a markdown renderer plus sanitizing the output before it's
+      shown to other users — this is untrusted user content rendered to
+      everyone who opens the mod, so an unsanitized renderer is a
+      stored-XSS hole, worth treating carefully given the existing
+      security-audit passes (`docs/security-audit-2026-09.md`).
+- [ ] Optional install-instructions field — a new mod field (schema column
+      + Upload/EditModForm input + a ModDetail section) for steps specific
+      to that mod, separate from the general client-setup guide (the
+      about.openwf.io "Client Setup" page, not something this repo hosts).
+- [ ] Fullscreen screenshot preview — click a screenshot in `ModDetail` to
+      view it fullscreen; can likely reuse the click-to-fullscreen pattern
+      already built for the file preview popup.
+- [ ] Bug report tracker — simplest version is just a "Report a bug" link
+      out to the GitHub repo's Issues page (no new backend); a real in-app
+      tracker would duplicate what GitHub Issues already does unless it
+      specifically needs to be reachable without a GitHub account.
+- [ ] Alpha/Beta badge with live version info — pull the version from the
+      Tauri app itself (`@tauri-apps/api/app`'s `getVersion()`) rather than
+      a hand-maintained string, plus a build/update date. Needs deciding
+      where the date comes from — a build-time-injected constant vs.
+      reading it from somewhere at runtime.
+- [ ] Mod risk/warning banner — a prominent red block on `ModDetail` for
+      mods that could break the game. Open question before building:
+      author-self-declared (trust-based, an Upload field) vs. admin-only
+      (safer against abuse or omission, but every warning then needs a
+      human to add it first) — worth deciding before adding schema for it.
+- [ ] Code-specific mod reporting — extend `ReportButton.tsx`/the `reports`
+      table so a report on a mod can point at a specific snippet from its
+      file preview (`FilePreview.tsx`), not just the mod as a whole. The
+      real complexity is capturing a text selection from the existing
+      syntax-highlighted preview and carrying it through to the report.
+- [ ] GitHub link on creator profiles — a new nullable column on `modders`
+      (same shape as `avatar_key`), editable in Settings, shown on
+      `views/Profile.tsx`.
+- [ ] Rework: auto-generate mod naming from category — e.g.
+      "tonysmegacheat" + Cheat Tool → "cheattool - tonysmegacheat". Needs
+      deciding *what* this renames: the internal `id` slug (`slugify()` in
+      `routes/mods.ts`) is baked into every version and its GitHub release
+      and must never change after creation (see `docs/architecture.md`),
+      so if this means the id, it can only apply at creation time, not
+      retroactively to existing mods — versus just the human-readable
+      `name` field, which is freely editable via `PATCH /api/mods/:id`
+      already and carries none of that risk.
 
 ## Security
 
