@@ -10,10 +10,10 @@ import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
 import type {
   Comment,
   CommentVoteRequest,
+  LikeSummary,
   Mod,
   ModVersion,
   ModWithVersions,
-  ReviewSummary,
   UpdateModMetadata,
   UploadMetadata,
 } from "@openwf-mod-manager/shared";
@@ -39,13 +39,15 @@ const MAX_VOTER_ID_LENGTH = 100;
 // few versions while testing), tight enough to cap a runaway script.
 const UPLOAD_LIMIT = 20;
 const UPLOAD_WINDOW_SECONDS = 60 * 60;
-// 10 comments/10min/IP and 20 ratings/10min/IP — both anonymous, so IP is
-// the only signal available; loose enough for genuine use.
+// 10 comments/10min/IP — anonymous, so IP is the only signal available;
+// loose enough for genuine use.
 const COMMENT_LIMIT = 10;
 const COMMENT_WINDOW_SECONDS = 10 * 60;
-const REVIEW_LIMIT = 20;
-const REVIEW_WINDOW_SECONDS = 10 * 60;
-// Voting is cheap to spam-click, so this is looser than comments/reviews
+// A like is a single click to toggle, so this is looser than comments —
+// same anonymous-per-IP model, see checkRateLimit.
+const LIKE_LIMIT = 60;
+const LIKE_WINDOW_SECONDS = 10 * 60;
+// Voting is cheap to spam-click, so this is looser than comments/likes
 // but still bounded — same anonymous-per-IP model, see checkRateLimit.
 const COMMENT_VOTE_LIMIT = 60;
 const COMMENT_VOTE_WINDOW_SECONDS = 10 * 60;
@@ -228,21 +230,19 @@ export function rowToMod(row: any): Mod {
     tags: JSON.parse(row.tags ?? "[]"),
     downloadCount: row.download_count ?? 0,
     commentCount: row.comment_count ?? 0,
-    reviewCount: row.review_count ?? 0,
-    averageRating: row.avg_rating ?? 0,
+    likeCount: row.like_count ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
 // Appended to m.* in every mods listing query below so Browse can show a
-// comment count and star rating per card without an extra request per mod.
+// comment count and like count per card without an extra request per mod.
 // Exported so routes/modders.ts's public-profile mod list can reuse the
 // exact same shape instead of drifting out of sync.
 export const AGGREGATE_COLUMNS = `
      (SELECT COUNT(*) FROM comments c2 WHERE c2.mod_id = m.id) as comment_count,
-     (SELECT COUNT(*) FROM reviews r2 WHERE r2.mod_id = m.id) as review_count,
-     (SELECT AVG(rating) FROM reviews r2 WHERE r2.mod_id = m.id) as avg_rating`;
+     (SELECT COUNT(*) FROM mod_likes l2 WHERE l2.mod_id = m.id) as like_count`;
 
 // Shared by every "mods + their latest version" listing query (GET /,
 // GET /mine, and routes/modders.ts's public profile) — each row is a mod
@@ -445,10 +445,10 @@ mods.post("/:id/download", async (c) => {
 });
 
 // GET /api/mods/:id/analytics — owner or admin only. Weekly-bucketed
-// downloads (mod_download_daily) and ratings (reviews.created_at) for the
+// downloads (mod_download_daily) and likes (mod_likes.created_at) for the
 // trailing ANALYTICS_WEEKS weeks, so an author can see whether an update
 // actually moved the needle instead of only ever seeing running totals
-// (mods.download_count, reviewCount/averageRating elsewhere in this file).
+// (mods.download_count, likeCount elsewhere in this file).
 // Buckets count back from right now in fixed 7-day windows, not calendar
 // weeks — the most recent bucket is always "the last 7 days," regardless
 // of what day of the week it happens to be.
@@ -468,18 +468,18 @@ mods.get("/:id/analytics", async (c) => {
 
   const rangeStart = new Date(Date.now() - ANALYTICS_WEEKS * 7 * MS_PER_DAY);
 
-  const [downloadResult, reviewResult] = await c.env.DB.batch([
+  const [downloadResult, likeResult] = await c.env.DB.batch([
     c.env.DB.prepare("SELECT day, count FROM mod_download_daily WHERE mod_id = ? AND day >= ?").bind(
       modId,
       rangeStart.toISOString().slice(0, 10)
     ),
-    c.env.DB.prepare("SELECT created_at, rating FROM reviews WHERE mod_id = ? AND created_at >= ?").bind(
+    c.env.DB.prepare("SELECT created_at FROM mod_likes WHERE mod_id = ? AND created_at >= ?").bind(
       modId,
       rangeStart.toISOString()
     ),
   ]);
   const downloadRows = downloadResult.results as { day: string; count: number }[];
-  const reviewRows = reviewResult.results as { created_at: string; rating: number }[];
+  const likeRows = likeResult.results as { created_at: string }[];
 
   const weeks = [];
   const now = Date.now();
@@ -491,18 +491,15 @@ mods.get("/:id/analytics", async (c) => {
       .filter((r) => new Date(r.day).getTime() >= weekStart && new Date(r.day).getTime() < weekEnd)
       .reduce((sum, r) => sum + r.count, 0);
 
-    const weekReviews = reviewRows.filter((r) => {
+    const likeCount = likeRows.filter((r) => {
       const t = new Date(r.created_at).getTime();
       return t >= weekStart && t < weekEnd;
-    });
-    const averageRating =
-      weekReviews.length > 0 ? weekReviews.reduce((sum, r) => sum + r.rating, 0) / weekReviews.length : null;
+    }).length;
 
     weeks.push({
       weekStart: new Date(weekStart).toISOString().slice(0, 10),
       downloads,
-      reviewCount: weekReviews.length,
-      averageRating,
+      likeCount,
     });
   }
 
@@ -841,7 +838,7 @@ mods.get("/:id/comments", async (c) => {
 // invalid/missing token just means the comment posts unlinked, not a 401.
 mods.post("/:id/comments", async (c) => {
   if (await getSetting(c.env, "comments_disabled")) {
-    return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
+    return c.json({ error: "comments_disabled", message: "Comments and likes are temporarily disabled." }, 423);
   }
 
   const allowed = await checkRateLimit(c, "comment", clientIp(c), COMMENT_LIMIT, COMMENT_WINDOW_SECONDS);
@@ -898,11 +895,11 @@ mods.post("/:id/comments", async (c) => {
 
 // POST /api/mods/:modId/comments/:commentId/vote — { reviewerId, value }.
 // value 1/-1 upserts this install's vote, 0 removes it. Same anonymous
-// per-install identity reviews use (see reviewerId.ts) — voting doesn't
+// per-install identity likes use (see reviewerId.ts) — voting doesn't
 // require an account any more than commenting does.
 mods.post("/:modId/comments/:commentId/vote", async (c) => {
   if (await getSetting(c.env, "comments_disabled")) {
-    return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
+    return c.json({ error: "comments_disabled", message: "Comments and likes are temporarily disabled." }, 423);
   }
 
   const allowed = await checkRateLimit(c, "comment_vote", clientIp(c), COMMENT_VOTE_LIMIT, COMMENT_VOTE_WINDOW_SECONDS);
@@ -983,69 +980,67 @@ mods.delete("/:modId/comments/:commentId", async (c) => {
   return c.body(null, 204);
 });
 
-// GET /api/mods/:id/reviews?reviewerId=... — aggregate rating, plus the
-// caller's own rating if it sent its reviewerId (a per-install random UUID,
-// see apps/desktop/src/reviewerId.ts — not a real account).
-mods.get("/:id/reviews", async (c) => {
+// GET /api/mods/:id/likes?reviewerId=... — total like count, plus whether
+// the caller has liked it if it sent its reviewerId (a per-install random
+// UUID, see apps/desktop/src/reviewerId.ts — not a real account).
+mods.get("/:id/likes", async (c) => {
   const modId = c.req.param("id");
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (!mod) return c.json({ error: "not found" }, 404);
 
-  const agg = await c.env.DB.prepare("SELECT AVG(rating) as avg, COUNT(*) as count FROM reviews WHERE mod_id = ?")
+  const agg = await c.env.DB.prepare("SELECT COUNT(*) as count FROM mod_likes WHERE mod_id = ?")
     .bind(modId)
-    .first<{ avg: number | null; count: number }>();
+    .first<{ count: number }>();
 
-  let myRating: number | null = null;
+  let liked = false;
   const reviewerId = c.req.query("reviewerId");
   if (reviewerId) {
-    const mine = await c.env.DB.prepare("SELECT rating FROM reviews WHERE mod_id = ? AND reviewer_id = ?")
+    const mine = await c.env.DB.prepare("SELECT 1 FROM mod_likes WHERE mod_id = ? AND reviewer_id = ?")
       .bind(modId, reviewerId)
-      .first<{ rating: number }>();
-    myRating = mine?.rating ?? null;
+      .first();
+    liked = !!mine;
   }
 
-  const summary: ReviewSummary = { average: agg?.avg ?? 0, count: agg?.count ?? 0, myRating };
+  const summary: LikeSummary = { count: agg?.count ?? 0, liked };
   return c.json(summary);
 });
 
-// POST /api/mods/:id/reviews — { reviewerId, rating }. Upserts: rating the
-// same mod again from the same install updates the existing row instead of
-// adding a duplicate (see the reviews table's PRIMARY KEY in schema.sql).
-mods.post("/:id/reviews", async (c) => {
+// POST /api/mods/:id/likes — { reviewerId }. Toggles: liking an
+// already-liked mod from the same install un-likes it, same
+// upsert-or-delete shape comment votes use for reviewerId.
+mods.post("/:id/likes", async (c) => {
   if (await getSetting(c.env, "comments_disabled")) {
-    return c.json({ error: "comments_disabled", message: "Comments and ratings are temporarily disabled." }, 423);
+    return c.json({ error: "comments_disabled", message: "Comments and likes are temporarily disabled." }, 423);
   }
 
-  const allowed = await checkRateLimit(c, "review", clientIp(c), REVIEW_LIMIT, REVIEW_WINDOW_SECONDS);
-  if (!allowed) return c.json({ error: "too many ratings from this connection — wait a bit and try again" }, 429);
+  const allowed = await checkRateLimit(c, "like", clientIp(c), LIKE_LIMIT, LIKE_WINDOW_SECONDS);
+  if (!allowed) return c.json({ error: "too many likes from this connection — wait a bit and try again" }, 429);
 
   const modId = c.req.param("id");
   const mod = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (!mod) return c.json({ error: "not found" }, 404);
 
-  const body = await c.req.json<{ reviewerId?: string; rating?: number }>().catch(() => null);
+  const body = await c.req.json<{ reviewerId?: string }>().catch(() => null);
   const reviewerId = body?.reviewerId?.trim();
-  const rating = body?.rating;
   if (!reviewerId || reviewerId.length > 100) {
     return c.json({ error: "reviewerId is required" }, 400);
   }
-  if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
-    return c.json({ error: "rating must be an integer 1-5" }, 400);
+
+  const existing = await c.env.DB.prepare("SELECT 1 FROM mod_likes WHERE mod_id = ? AND reviewer_id = ?")
+    .bind(modId, reviewerId)
+    .first();
+  if (existing) {
+    await c.env.DB.prepare("DELETE FROM mod_likes WHERE mod_id = ? AND reviewer_id = ?").bind(modId, reviewerId).run();
+  } else {
+    await c.env.DB.prepare("INSERT INTO mod_likes (mod_id, reviewer_id, created_at) VALUES (?, ?, ?)")
+      .bind(modId, reviewerId, new Date().toISOString())
+      .run();
   }
 
-  const now = new Date().toISOString();
-  await c.env.DB.prepare(
-    `INSERT INTO reviews (mod_id, reviewer_id, rating, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (mod_id, reviewer_id) DO UPDATE SET rating = excluded.rating, updated_at = excluded.updated_at`
-  )
-    .bind(modId, reviewerId, rating, now, now)
-    .run();
-
-  const agg = await c.env.DB.prepare("SELECT AVG(rating) as avg, COUNT(*) as count FROM reviews WHERE mod_id = ?")
+  const agg = await c.env.DB.prepare("SELECT COUNT(*) as count FROM mod_likes WHERE mod_id = ?")
     .bind(modId)
-    .first<{ avg: number | null; count: number }>();
+    .first<{ count: number }>();
 
-  const summary: ReviewSummary = { average: agg?.avg ?? 0, count: agg?.count ?? 0, myRating: rating };
-  return c.json(summary, 201);
+  const summary: LikeSummary = { count: agg?.count ?? 0, liked: !existing };
+  return c.json(summary, existing ? 200 : 201);
 });

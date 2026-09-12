@@ -1,15 +1,15 @@
 import { z, type ZodType } from "zod";
 import type {
   Comment,
+  LikeSummary,
   Mod,
   ModAnalytics,
   ModderProfile,
   ModWithVersions,
-  ReviewSummary,
   UpdateModMetadata,
   UploadMetadata,
 } from "@openwf-mod-manager/shared";
-import { CommentSchema, ModWithVersionsSchema, ModderProfileSchema, ReviewSummarySchema } from "@openwf-mod-manager/shared";
+import { CommentSchema, LikeSummarySchema, ModWithVersionsSchema, ModderProfileSchema } from "@openwf-mod-manager/shared";
 
 // Points at the deployed Worker (apps/api). Override for local dev with a
 // .env file (VITE_API_BASE_URL=http://127.0.0.1:8787) once wrangler dev is running.
@@ -215,13 +215,13 @@ export async function voteOnComment(
   return postJson(`/api/mods/${modId}/comments/${commentId}/vote`, { reviewerId, value });
 }
 
-export async function fetchReviewSummary(modId: string, reviewerId: string): Promise<ReviewSummary> {
-  const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/reviews?reviewerId=${encodeURIComponent(reviewerId)}`);
-  return readJsonOrThrow(res, ReviewSummarySchema, "failed to load reviews");
+export async function fetchLikeSummary(modId: string, reviewerId: string): Promise<LikeSummary> {
+  const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/likes?reviewerId=${encodeURIComponent(reviewerId)}`);
+  return readJsonOrThrow(res, LikeSummarySchema, "failed to load likes");
 }
 
-export async function postReview(modId: string, reviewerId: string, rating: number): Promise<ReviewSummary> {
-  return postJson(`/api/mods/${modId}/reviews`, { reviewerId, rating });
+export async function toggleLike(modId: string, reviewerId: string): Promise<LikeSummary> {
+  return postJson(`/api/mods/${modId}/likes`, { reviewerId });
 }
 
 export interface Account {

@@ -1,7 +1,7 @@
 // Reddit-style up/down arrow pair with a net score between them. Clicking
 // the currently-active direction again un-votes (value 0) rather than
 // toggling straight to the opposite — same "click again to undo" behavior
-// as StarRating's click-to-rate.
+// as LikeButton's click-to-like.
 export default function VoteControl({
   score,
   myVote,

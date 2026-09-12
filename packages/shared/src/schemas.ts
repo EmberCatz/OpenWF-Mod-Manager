@@ -42,8 +42,7 @@ export const ModSchema = z.object({
   tags: z.array(z.string()),
   downloadCount: z.number(),
   commentCount: z.number(),
-  reviewCount: z.number(),
-  averageRating: z.number(),
+  likeCount: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -64,10 +63,9 @@ export const CommentSchema = z.object({
   createdAt: z.string(),
 });
 
-export const ReviewSummarySchema = z.object({
-  average: z.number(),
+export const LikeSummarySchema = z.object({
   count: z.number(),
-  myRating: z.number().nullable(),
+  liked: z.boolean(),
 });
 
 export const ModderProfileSchema = z.object({

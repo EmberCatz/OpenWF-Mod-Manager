@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
-import type { ModWithVersions, ModVersion, ReviewSummary } from "@openwf-mod-manager/shared";
+import type { ModWithVersions, ModVersion, LikeSummary } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
-import { deleteMod, downloadModFile, fetchMod, fetchReviewSummary, postReview } from "../api";
+import { deleteMod, downloadModFile, fetchMod, fetchLikeSummary, toggleLike } from "../api";
 import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { useConflictConfirm } from "./ConflictConfirmDialog";
 import { getInstalled } from "../installed";
 import { listZipTextEntries, type ZipTextEntry } from "../native";
 import { getReviewerId } from "../reviewerId";
+import { setLiked } from "../likedMods";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
 import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
-import StarRating from "./StarRating";
+import LikeButton from "./LikeButton";
 import FilePreview from "./FilePreview";
 import CommentSection from "./CommentSection";
 import ReportButton from "./ReportButton";
@@ -59,7 +60,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [previewLoading, setPreviewLoading] = useState(true);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null);
+  const [likeSummary, setLikeSummary] = useState<LikeSummary | null>(null);
 
   useEffect(() => {
     fetchMod(modId)
@@ -70,9 +71,12 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
 
-    fetchReviewSummary(modId, getReviewerId())
-      .then(setReviewSummary)
-      .catch(() => {}); // reviews are a nice-to-have — a failure here shouldn't block the rest of the page
+    fetchLikeSummary(modId, getReviewerId())
+      .then((summary) => {
+        setLikeSummary(summary);
+        setLiked(modId, summary.liked); // reconcile the local cache with server truth
+      })
+      .catch(() => {}); // likes are a nice-to-have — a failure here shouldn't block the rest of the page
   }, [modId]);
 
   // Previews the latest version's file(s) — a zip's text-decodable entries,
@@ -97,11 +101,13 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       .finally(() => setPreviewLoading(false));
   }, [mod?.versions[0]?.id]);
 
-  async function handleRate(rating: number) {
+  async function handleToggleLike() {
     try {
-      setReviewSummary(await postReview(modId, getReviewerId(), rating));
+      const summary = await toggleLike(modId, getReviewerId());
+      setLikeSummary(summary);
+      setLiked(modId, summary.liked);
     } catch {
-      // leave the previous summary in place — a failed rating isn't worth interrupting the page for
+      // leave the previous summary in place — a failed like isn't worth interrupting the page for
     }
   }
 
@@ -196,14 +202,8 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                 by <AuthorLink name={mod.author} accountId={mod.ownerId} />
                 {mod.subAuthor && <> · with {mod.subAuthor}</>} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
               </p>
-              <div className="review-summary">
-                <StarRating value={reviewSummary?.myRating ?? reviewSummary?.average ?? 0} interactive onRate={handleRate} />
-                <span className="muted">
-                  {reviewSummary && reviewSummary.count > 0
-                    ? `${reviewSummary.average.toFixed(1)} (${reviewSummary.count} rating${reviewSummary.count === 1 ? "" : "s"})`
-                    : "No ratings yet"}
-                  {reviewSummary?.myRating != null && " — click to change your rating"}
-                </span>
+              <div className="like-summary">
+                <LikeButton liked={likeSummary?.liked ?? false} count={likeSummary?.count ?? 0} onToggle={handleToggleLike} />
               </div>
               <ReportButton targetType="mod" targetId={mod.id} />
               {account?.isAdmin && (

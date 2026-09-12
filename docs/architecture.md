@@ -301,7 +301,7 @@ views rather than duplicating them.
   custom domain in front of it. Covers `POST /api/auth/signup` and
   `/login` (per IP — the actual brute-force/mass-account-creation
   surface), `POST /api/mods*` (per authenticated modder), and the
-  anonymous `POST /api/mods/:id/comments` and `/reviews` (per IP). Not
+  anonymous `POST /api/mods/:id/comments` and `/likes` (per IP). Not
   built for a real distributed attack — this project's threat model is
   "a bored person with a script," not a botnet.
 - **Not yet implemented:**

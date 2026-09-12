@@ -7,6 +7,20 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Mod Rating System Overhaul — replaced 0-5 star reviews with a single
+      Like toggle. `reviews` D1 table dropped in favor of `mod_likes`
+      (mod_id, reviewer_id); existing reviews were carried over 1-for-1 as
+      likes in the migration so counts didn't reset to zero. New
+      `GET`/`POST /api/mods/:id/likes` (toggle, same anonymous
+      per-install reviewerId as before). `components/LikeButton.tsx` —
+      red heart outline unliked, solid filled red liked, count beside it —
+      replaces `StarRating.tsx` everywhere: Mod Detail (interactive) and
+      both Browse card layouts (grid/list), positioned right after the
+      comment-count icon. Cards are directly clickable too, not just Mod
+      Detail — `likedMods.ts` caches this install's own liked mods in
+      localStorage so a card's fill state doesn't need a per-mod request,
+      self-healing from server truth whenever Mod Detail loads. Author
+      analytics' "average rating" chart became "new likes" per week.
 - [x] File-conflict detection before install — the first half of "nothing
       checks whether two installed mods write to the same file." New Rust
       dry-run commands (`compute_install_file_path`, `list_zip_install_paths`)
@@ -143,8 +157,8 @@ testing) rather than letting them evaporate.
       (`components/FilePreview.tsx`, Rust `list_zip_text_entries`)
 - [x] Comments — open, no account system, name is just remembered locally
       (`components/CommentSection.tsx`, `comments` D1 table)
-- [x] Reviews — 0-5 stars, color scales red→green with the average,
-      one rating per install (`components/StarRating.tsx`, `reviews` D1 table)
+- [x] ~~Reviews — 0-5 stars~~ replaced by the simple Like system, see
+      Recently shipped above
 - [x] Grid/list view toggle in Browse, remembered in localStorage
 - [x] Sidebar filters in Browse — type (metadata patch / pluto script /
       other), game version, tags — replacing the old top-of-page tag bar

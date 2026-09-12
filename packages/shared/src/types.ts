@@ -43,8 +43,7 @@ export interface Mod {
   tags: string[]; // free-form, user-defined (Notion-style) — unlike gameVersions, not validated against a fixed list
   downloadCount: number; // incremented via POST /api/mods/:id/download — best-effort, not a precise audit trail
   commentCount: number; // COUNT(*) from comments, computed server-side on every read
-  reviewCount: number; // COUNT(*) from reviews, computed server-side on every read
-  averageRating: number; // AVG(rating) from reviews, 0 when reviewCount is 0
+  likeCount: number; // COUNT(*) from mod_likes, computed server-side on every read
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }
@@ -72,8 +71,7 @@ export interface ModWithVersions extends Mod {
 export interface ModAnalyticsWeek {
   weekStart: string; // YYYY-MM-DD, the start of this 7-day window
   downloads: number;
-  reviewCount: number; // reviews submitted during this window, not a running total
-  averageRating: number | null; // null when reviewCount is 0
+  likeCount: number; // new likes recorded during this window, not a running total
 }
 
 export interface ModAnalytics {
@@ -142,29 +140,26 @@ export interface Comment {
   createdAt: string; // ISO 8601
 }
 
-// A single reviewer's star rating for a mod. reviewerId is a random UUID
-// generated once per install (apps/desktop/src/reviewerId.ts) and persisted
-// in localStorage — enough to let someone update their own rating, not a
-// real identity or anti-abuse mechanism.
-export interface Review {
+// A single reviewer's like on a mod. reviewerId is a random UUID generated
+// once per install (apps/desktop/src/reviewerId.ts) and persisted in
+// localStorage — enough to let someone toggle their own like, not a real
+// identity or anti-abuse mechanism.
+export interface Like {
   modId: string;
   reviewerId: string;
-  rating: number; // 1-5
   createdAt: string; // ISO 8601
-  updatedAt: string; // ISO 8601
 }
 
-// GET /api/mods/:id/reviews response — the aggregate plus (optionally)
-// what this install itself rated it.
-export interface ReviewSummary {
-  average: number; // 0 when count is 0
+// GET /api/mods/:id/likes response — the total count plus (optionally)
+// whether this install itself has liked it.
+export interface LikeSummary {
   count: number;
-  myRating: number | null;
+  liked: boolean;
 }
 
 // POST /api/mods/:modId/comments/:commentId/vote body — value 0 removes an
 // existing vote (toggling an up/downvote off), same upsert-or-delete shape
-// reviews already use for reviewerId.
+// likes already use for reviewerId.
 export interface CommentVoteRequest {
   reviewerId: string;
   value: -1 | 0 | 1;

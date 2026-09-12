@@ -1,8 +1,7 @@
 // A random id generated once per install and persisted in localStorage —
-// just enough for the reviews API to let this install update its own star
-// rating on a mod (upsert) instead of stacking duplicate rows. Not a real
-// account or identity; nothing about it is sent anywhere except alongside
-// a rating.
+// just enough for the likes API to let this install toggle its own like on
+// a mod instead of stacking duplicate rows. Not a real account or
+// identity; nothing about it is sent anywhere except alongside a like.
 
 const KEY = "owmm.reviewerId";
 

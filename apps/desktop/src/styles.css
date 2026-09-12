@@ -1189,18 +1189,12 @@ body {
   row-gap: 0.3rem;
 }
 
-.mod-card__grid-meta .star-rating,
-.mod-card__meta-stat,
-.mod-card__rating-group {
+.mod-card__meta-stat {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
   color: var(--muted);
   font-size: 1.2em;
-}
-
-.mod-card__rating-group {
-  gap: 0.35rem;
 }
 
 .mod-card__meta-stat .btn-icon {
@@ -1212,11 +1206,6 @@ body {
 .mod-card__meta-date {
   color: var(--muted);
   font-size: 0.78rem;
-}
-
-.star-rating--sm .star svg {
-  width: 0.85rem;
-  height: 0.85rem;
 }
 
 /* --- File preview --- */
@@ -1264,35 +1253,43 @@ body {
   margin: 0;
 }
 
-/* --- Reviews --- */
+/* --- Likes --- */
 
-.review-summary {
+.like-summary {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
   margin: 0.4rem 0 0.6rem;
 }
 
-.star-rating {
+.like-button {
   display: inline-flex;
-  gap: 0.1rem;
-}
-
-.star {
+  align-items: center;
+  gap: 0.3rem;
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
-  color: inherit;
+  color: var(--muted);
+  font: inherit; /* a <button> doesn't inherit font like the sibling download/comment <span>s do */
 }
 
-.star:disabled {
-  cursor: default;
+.like-button__icon {
+  color: #ff5c5c;
+  width: 1.4rem;
+  height: 1.4rem;
 }
 
-.star svg {
-  width: 1.1rem;
-  height: 1.1rem;
+.like-button:hover .like-button__icon {
+  filter: brightness(1.2);
+}
+
+.like-button--sm {
+  font-size: 1.2em;
+}
+
+.like-button--sm .like-button__icon {
+  width: 1.2em;
+  height: 1.2em;
 }
 
 /* --- Comments --- */

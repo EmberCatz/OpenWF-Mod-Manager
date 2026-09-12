@@ -94,16 +94,15 @@ CREATE TABLE IF NOT EXISTS comment_votes (
     PRIMARY KEY (comment_id, voter_id)
 );
 
--- One row per (mod, reviewer) — reviewer_id is a random UUID an install
--- generates once for itself (see apps/desktop/src/reviewerId.ts), not a
--- real account. Re-rating the same mod upserts this row instead of adding
--- a duplicate.
-CREATE TABLE IF NOT EXISTS reviews (
+-- One row per (mod, reviewer) that has liked it — reviewer_id is a random
+-- UUID an install generates once for itself (see
+-- apps/desktop/src/reviewerId.ts), not a real account. Liking again toggles
+-- the row off (see POST /api/mods/:id/likes) rather than ever stacking
+-- duplicates.
+CREATE TABLE IF NOT EXISTS mod_likes (
     mod_id      TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
     reviewer_id TEXT NOT NULL,
-    rating      INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (mod_id, reviewer_id)
 );
 

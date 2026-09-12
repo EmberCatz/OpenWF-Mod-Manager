@@ -202,8 +202,8 @@ const TOGGLES: { field: keyof SiteSettings; label: string; description: string }
   },
   {
     field: "commentsDisabled",
-    label: "Disable comments & ratings",
-    description: "Blocks new comments and star ratings app-wide.",
+    label: "Disable comments & likes",
+    description: "Blocks new comments and mod likes app-wide.",
   },
 ];
 
@@ -367,7 +367,7 @@ function SiteControlsPanel({ apiKey }: { apiKey: string }) {
       <h4 className="sidebar-section__title site-control-section-title">Banned IPs</h4>
       <p className="hint">
         Blocks an IP from the API entirely, regardless of account — catches abuse from anonymous/throwaway accounts a
-        user ban can't touch (comments, ratings, reports have no account concept at all).
+        user ban can't touch (comments, likes, reports have no account concept at all).
       </p>
       <div className="field__row">
         <input type="text" placeholder="IP address" value={newIp} onChange={(e) => setNewIp(e.target.value)} />

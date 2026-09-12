@@ -63,7 +63,7 @@ function WeeklyBarChart({
 // the app's own accent (badges, active tab, highlights) — rather than
 // introducing a new palette just for this one panel.
 const DOWNLOADS_COLOR = "#3d6fd6";
-const RATING_COLOR = "#e0a339";
+const LIKES_COLOR = "#e0a339";
 
 export default function AuthorAnalyticsPanel({ modId, apiKey }: { modId: string; apiKey: string }) {
   const [data, setData] = useState<ModAnalytics | null>(null);
@@ -105,13 +105,13 @@ export default function AuthorAnalyticsPanel({ modId, apiKey }: { modId: string;
         emptyMessage="No downloads recorded in this window yet."
       />
 
-      <h5 className="analytics-panel__title">Average rating</h5>
+      <h5 className="analytics-panel__title">New likes</h5>
       <WeeklyBarChart
         weeks={data.weeks}
-        valueOf={(w) => w.averageRating}
-        color={RATING_COLOR}
-        formatValue={(v) => `${v.toFixed(1)} / 5`}
-        emptyMessage="No ratings submitted in this window yet."
+        valueOf={(w) => w.likeCount}
+        color={LIKES_COLOR}
+        formatValue={(v) => `${v} like${v === 1 ? "" : "s"}`}
+        emptyMessage="No likes recorded in this window yet."
       />
 
       <button className="button analytics-panel__table-toggle" onClick={() => setShowTable((s) => !s)}>
@@ -123,8 +123,7 @@ export default function AuthorAnalyticsPanel({ modId, apiKey }: { modId: string;
             <tr>
               <th>Week of</th>
               <th>Downloads</th>
-              <th>Reviews</th>
-              <th>Avg rating</th>
+              <th>Likes</th>
             </tr>
           </thead>
           <tbody>
@@ -132,8 +131,7 @@ export default function AuthorAnalyticsPanel({ modId, apiKey }: { modId: string;
               <tr key={w.weekStart}>
                 <td>{w.weekStart}</td>
                 <td>{w.downloads}</td>
-                <td>{w.reviewCount}</td>
-                <td>{w.averageRating !== null ? w.averageRating.toFixed(1) : "—"}</td>
+                <td>{w.likeCount}</td>
               </tr>
             ))}
           </tbody>

@@ -101,17 +101,18 @@ export function ChevronDownIcon({ className }: IconProps) {
   );
 }
 
-export function StarIcon({ className, filled }: IconProps & { filled: boolean }) {
+export function HeartIcon({ className, filled }: IconProps & { filled: boolean }) {
   return (
     <svg
       className={className}
       viewBox="0 0 24 24"
       fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.8"
       strokeLinejoin="round"
+      strokeLinecap="round"
     >
-      <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.8z" />
+      <path d="M12 20.3c-.2 0-.4-.07-.55-.2C7.4 16.9 3 13.2 3 9.1 3 6.6 5 4.6 7.5 4.6c1.6 0 3.1.85 3.9 2.15.13.2.47.2.6 0 .8-1.3 2.3-2.15 3.9-2.15C18.5 4.6 20.5 6.6 20.5 9.1c0 4.1-4.4 7.8-8.45 11-.15.13-.35.2-.55.2z" />
     </svg>
   );
 }

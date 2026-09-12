@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import type { ModVersion, ModWithVersions } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
-import { fetchModList } from "../api";
+import { fetchModList, toggleLike } from "../api";
 import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
+import { getReviewerId } from "../reviewerId";
+import { isLiked, setLiked } from "../likedMods";
 import { CheckCircleIcon, CommentIcon, DownloadIcon, GridIcon, ListIcon, RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import ModDetail from "../components/ModDetail";
 import SplitButton from "../components/SplitButton";
 import { useConflictConfirm } from "../components/ConflictConfirmDialog";
-import StarRating from "../components/StarRating";
+import LikeButton from "../components/LikeButton";
 import ClampedText from "../components/ClampedText";
 import GameVersionPicker from "../components/GameVersionPicker";
 import AuthorLink from "../components/AuthorLink";
@@ -32,7 +34,7 @@ const PAGE_SIZE_STORAGE = "owmm.browsePageSize";
 
 const SORT_LABELS: Record<SortKey, string> = {
   downloads: "Most downloads",
-  score: "Highest rated",
+  score: "Most liked",
   new: "Newest",
   updated: "Recently updated",
   name: "Name (A–Z)",
@@ -75,7 +77,7 @@ function sortMods(mods: ModWithVersions[], key: SortKey): ModWithVersions[] {
     case "downloads":
       return sorted.sort((a, b) => b.downloadCount - a.downloadCount);
     case "score":
-      return sorted.sort((a, b) => b.averageRating - a.averageRating);
+      return sorted.sort((a, b) => b.likeCount - a.likeCount);
     case "new":
       return sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     case "updated":
@@ -216,6 +218,20 @@ export default function Browse() {
       toast.error(String(e));
     } finally {
       setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
+    }
+  }
+
+  // Directly togglable from the card, not just Mod Detail — the card's
+  // initial liked state comes from the local cache (likedMods.ts) so this
+  // doesn't need a per-mod request just to render, and stays in sync with
+  // it on every toggle.
+  async function handleToggleLike(mod: ModWithVersions) {
+    try {
+      const summary = await toggleLike(mod.id, getReviewerId());
+      setLiked(mod.id, summary.liked);
+      setMods((prev) => prev.map((m) => (m.id === mod.id ? { ...m, likeCount: summary.count } : m)));
+    } catch (e) {
+      toast.error(String(e));
     }
   }
 
@@ -421,10 +437,6 @@ export default function Browse() {
                           {mod.subAuthor && <> · with {mod.subAuthor}</>}
                         </span>
                         <div className="mod-card__grid-meta">
-                          <span className="mod-card__rating-group" title={`${mod.reviewCount ?? 0} rating${(mod.reviewCount ?? 0) === 1 ? "" : "s"}`}>
-                            <StarRating value={mod.averageRating ?? 0} className="star-rating--sm" />
-                            {mod.reviewCount ?? 0}
-                          </span>
                           <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
                           {mod.theme && <span className="badge">{mod.theme}</span>}
                         </div>
@@ -437,6 +449,12 @@ export default function Browse() {
                             <CommentIcon className="btn-icon" />
                             {mod.commentCount ?? 0}
                           </span>
+                          <LikeButton
+                            liked={isLiked(mod.id)}
+                            count={mod.likeCount ?? 0}
+                            size="sm"
+                            onToggle={() => handleToggleLike(mod)}
+                          />
                           <span className="mod-card__meta-date">{formatModDate(mod)}</span>
                         </div>
                         <div className="mod-card__grid-actions">
@@ -513,10 +531,6 @@ export default function Browse() {
                           </div>
                         )}
                         <div className="mod-card__footer">
-                          <span className="mod-card__rating-group" title={`${mod.reviewCount ?? 0} rating${(mod.reviewCount ?? 0) === 1 ? "" : "s"}`}>
-                            <StarRating value={mod.averageRating ?? 0} className="star-rating--sm" />
-                            {mod.reviewCount ?? 0}
-                          </span>
                           <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
                           {mod.theme && <span className="badge">{mod.theme}</span>}
                           {version && <span className="muted">{formatGameVersions(version.gameVersions)}</span>}
@@ -528,6 +542,12 @@ export default function Browse() {
                             <CommentIcon className="btn-icon" />
                             {mod.commentCount ?? 0}
                           </span>
+                          <LikeButton
+                            liked={isLiked(mod.id)}
+                            count={mod.likeCount ?? 0}
+                            size="sm"
+                            onToggle={() => handleToggleLike(mod)}
+                          />
                           <span className="mod-card__meta-date">{formatModDate(mod)}</span>
                           {isUpToDate && (
                             <span className="badge badge--installed">
