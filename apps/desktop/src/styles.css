@@ -1088,7 +1088,11 @@ body {
 
 .mod-list--grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  /* A fixed column width (not minmax(…, 1fr)) so a card is the same size
+     everywhere this grid is used — Browse sits next to a 200px sidebar,
+     Profile doesn't, and letting columns stretch to fill the row made the
+     same card render at two different widths depending on which one. */
+  grid-template-columns: repeat(auto-fill, 240px);
   gap: 0.85rem;
   align-items: stretch;
 }
@@ -1096,7 +1100,7 @@ body {
 .mod-card--grid {
   display: flex;
   flex-direction: column;
-  min-width: 240px;
+  width: 240px;
   min-height: 360px;
   padding: 0;
   overflow: hidden;
