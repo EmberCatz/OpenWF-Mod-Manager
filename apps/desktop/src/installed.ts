@@ -42,3 +42,7 @@ export function clearInstalled(modId: string): void {
   delete all[modId];
   writeAll(all);
 }
+
+export function listInstalled(): InstalledEntry[] {
+  return Object.values(readAll());
+}

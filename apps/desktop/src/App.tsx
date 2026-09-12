@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Browse from "./views/Browse";
 import Upload from "./views/Upload";
 import MyMods from "./views/MyMods";
+import InstalledMods from "./views/InstalledMods";
 import LiveSettings from "./views/LiveSettings";
 import Admin from "./views/Admin";
 import Settings from "./views/Settings";
@@ -13,6 +14,7 @@ import { subscribeProfileNav } from "./profileNav";
 
 const ALL_TABS = [
   { id: "browse", label: "Browse", view: Browse },
+  { id: "installed", label: "Installed Mods", view: InstalledMods },
   { id: "upload", label: "Upload", view: Upload },
   { id: "my-mods", label: "My Mods", view: MyMods },
   { id: "live-settings", label: "Live Settings", view: LiveSettings },

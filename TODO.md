@@ -7,6 +7,19 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Installed Mods tab (`views/InstalledMods.tsx`) — every installed mod
+      in one place, cross-referencing `installed.ts`'s local state against
+      one `fetchModList()` call to flag which ones have a newer version on
+      the server (closes the old "nothing surfaces 3 of your installed
+      mods have an update" gap — see the version history this replaces in
+      "Ideas, not committed to yet"). Outdated mods sort to the top, a
+      banner up top summarizes the count with a one-click "Update all", and
+      each row gets Update/Reinstall/Uninstall as appropriate — including a
+      "no longer available" state for a mod that's since been deleted from
+      the server, which previously had no way to even be uninstalled from
+      the UI once its Browse listing was gone. `listInstalled()` is the one
+      new export (`installed.ts`); everything else reuses existing
+      `modActions.ts` functions.
 - [x] Real app icon — an ornate gem/flame emblem replacing the flat
       placeholder square (`apps/desktop/src-tauri/icons/`, source kept as
       `source.png` for regeneration via `tauri icon`). Also used as the
@@ -144,10 +157,6 @@ testing) rather than letting them evaporate.
       the Metadata Patches/Scripts folders, tell me what's untracked, let
       me adopt or remove it" pass would smooth over migrating existing
       installs.
-- [ ] Update notifications for installed mods — installed-state and full
-      version history both already exist, but nothing surfaces "3 of your
-      installed mods have a newer version" anywhere in Browse/My Mods; you
-      have to open each mod's detail view to find out.
 - [ ] Author analytics — `download_count` and `reviews` already track
       totals; there's no trend-over-time view (downloads/ratings by week)
       for someone who's uploaded a mod, which is the more useful shape of
