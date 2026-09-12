@@ -56,6 +56,23 @@ export async function installModZip(zipBytes: ArrayBuffer, targetDir: string): P
   });
 }
 
+// Dry-run counterparts to installModFile/installModZip — report where a
+// file would land (or which files a zip would extract) without writing
+// anything, guaranteed by the Rust side to be byte-identical to what the
+// real install would produce. Used by modActions.ts's mod-conflict check
+// to see whether an install would overwrite another mod's tracked files
+// before actually committing to it.
+export async function computeInstallFilePath(targetDir: string, fileName: string): Promise<string> {
+  return invoke<string>("compute_install_file_path", { targetDir, fileName });
+}
+
+export async function listZipInstallPaths(zipBytes: ArrayBuffer, targetDir: string): Promise<string[]> {
+  return invoke<string[]>("list_zip_install_paths", {
+    zipBytes: Array.from(new Uint8Array(zipBytes)),
+    targetDir,
+  });
+}
+
 // Deletes previously-installed files (paths as returned by installModFile /
 // installModZip). Missing files are treated as already-gone, not an error.
 export async function uninstallFiles(paths: string[]): Promise<void> {

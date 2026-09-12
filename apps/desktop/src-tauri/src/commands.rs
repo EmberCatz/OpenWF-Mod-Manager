@@ -103,6 +103,15 @@ pub async fn pick_and_write_file(app: tauri::AppHandle, default_file_name: Strin
     Ok(Some(path.display().to_string()))
 }
 
+// Shared by install_mod_file and its dry-run counterpart below, so the two
+// can never disagree about where a file would land — the conflict check
+// only means anything if it's checking the exact path that would actually
+// get written.
+fn safe_dest_path(target_dir: &str, file_name: &str) -> Result<PathBuf, String> {
+    let safe_name = Path::new(file_name).file_name().ok_or_else(|| format!("invalid file name: {file_name}"))?;
+    Ok(PathBuf::from(target_dir).join(safe_name))
+}
+
 // Installs a single raw file (.pluto / .txt) directly into target_dir under
 // its own name — the common case now that mods don't have to be zipped.
 // file_name comes from the server (the original uploaded name), but it's
@@ -110,17 +119,20 @@ pub async fn pick_and_write_file(app: tauri::AppHandle, default_file_name: Strin
 // used, so a crafted "../../evil.pluto" can't escape target_dir.
 #[tauri::command]
 pub fn install_mod_file(bytes: Vec<u8>, target_dir: String, file_name: String) -> Result<String, String> {
-    let safe_name = Path::new(&file_name)
-        .file_name()
-        .ok_or_else(|| format!("invalid file name: {file_name}"))?;
-
-    let dir = PathBuf::from(&target_dir);
-    fs::create_dir_all(&dir).map_err(|e| format!("failed to create '{}': {e}", dir.display()))?;
-
-    let dest_path = dir.join(safe_name);
+    let dest_path = safe_dest_path(&target_dir, &file_name)?;
+    fs::create_dir_all(&target_dir).map_err(|e| format!("failed to create '{target_dir}': {e}"))?;
     fs::write(&dest_path, bytes).map_err(|e| format!("failed to write '{}': {e}", dest_path.display()))?;
-
     Ok(dest_path.display().to_string())
+}
+
+// Dry-run counterpart to install_mod_file — reports where the file WOULD
+// land without writing anything, so the frontend can check it against
+// every other mod's already-installed files (modActions.ts's conflict
+// check) before committing to an install that would silently overwrite
+// another mod's file.
+#[tauri::command]
+pub fn compute_install_file_path(target_dir: String, file_name: String) -> Result<String, String> {
+    Ok(safe_dest_path(&target_dir, &file_name)?.display().to_string())
 }
 
 // A small download that decompresses to gigabytes (a zip bomb) can fill a
@@ -159,6 +171,33 @@ fn copy_with_cap(entry: &mut impl Read, out_file: &mut fs::File, running_total: 
 #[tauri::command]
 pub fn install_mod_zip(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<String>, String> {
     extract_zip_with_cap(zip_bytes, target_dir, MAX_UNCOMPRESSED_BYTES)
+}
+
+// Dry-run counterpart to install_mod_zip — reports which files WOULD be
+// written (same path logic, same zip-slip skip via enclosed_name()) without
+// extracting anything, so the frontend can check the result against every
+// other mod's already-installed files before committing to an install that
+// would silently overwrite another mod's file. Cheap and zip-bomb-safe by
+// construction: entries are only inspected for their name/type, never
+// decompressed.
+#[tauri::command]
+pub fn list_zip_install_paths(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<String>, String> {
+    let dir = PathBuf::from(&target_dir);
+    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("not a valid zip: {e}"))?;
+    let mut paths = Vec::new();
+
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| format!("failed to read zip entry: {e}"))?;
+        let Some(relative_path) = entry.enclosed_name() else {
+            continue;
+        };
+        if entry.is_dir() {
+            continue;
+        }
+        paths.push(dir.join(&relative_path).display().to_string());
+    }
+
+    Ok(paths)
 }
 
 // `cap` is only a parameter (not always MAX_UNCOMPRESSED_BYTES) so the
@@ -376,5 +415,36 @@ mod tests {
         assert_eq!(scan_install_folder(missing.display().to_string()).unwrap(), Vec::<String>::new());
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // Regression test for the mod-conflict check (TODO.md): the dry-run
+    // commands must report the exact same paths the real install commands
+    // would write, or the conflict check they back is worthless.
+    #[test]
+    fn dry_run_paths_match_real_install_paths() {
+        let tmp = std::env::temp_dir().join(format!("owmm-dryruntest-{}", std::process::id()));
+        let target_dir = tmp.display().to_string();
+
+        let computed_file_path = compute_install_file_path(target_dir.clone(), "Swarm.pluto".to_string()).unwrap();
+        let real_file_path = install_mod_file(b"content".to_vec(), target_dir.clone(), "Swarm.pluto".to_string()).unwrap();
+        assert_eq!(computed_file_path, real_file_path);
+
+        let zip_bytes = build_test_zip("nested/inner.txt", b"z");
+        let listed_zip_paths = list_zip_install_paths(zip_bytes.clone(), target_dir.clone()).unwrap();
+        let real_zip_paths = extract_zip_with_cap(zip_bytes, target_dir, MAX_UNCOMPRESSED_BYTES).unwrap();
+        assert_eq!(listed_zip_paths, real_zip_paths);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn list_zip_install_paths_does_not_write_anything() {
+        let tmp = std::env::temp_dir().join(format!("owmm-dryrun-nowrite-{}", std::process::id()));
+        let zip_bytes = build_test_zip("payload.txt", b"content");
+
+        let paths = list_zip_install_paths(zip_bytes, tmp.display().to_string()).unwrap();
+
+        assert_eq!(paths.len(), 1);
+        assert!(!tmp.exists(), "a dry run must not create the target directory or any file in it");
     }
 }

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { ModWithVersions, ModVersion, ReviewSummary } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
 import { deleteMod, downloadModFile, fetchMod, fetchReviewSummary, postReview } from "../api";
-import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from "../modActions";
+import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
+import { useConflictConfirm } from "./ConflictConfirmDialog";
 import { getInstalled } from "../installed";
 import { listZipTextEntries, type ZipTextEntry } from "../native";
 import { getReviewerId } from "../reviewerId";
@@ -49,6 +50,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionState>({ status: "idle" });
+  const { requestConfirm, modal: conflictModal } = useConflictConfirm();
   const [installedVersion, setInstalledVersionState] = useState<string | null>(null);
   const [adminConfirming, setAdminConfirming] = useState(false);
   const [adminBusy, setAdminBusy] = useState(false);
@@ -103,16 +105,31 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
     }
   }
 
+  async function performInstall(version: ModVersion, force: boolean) {
+    if (!mod) return;
+    const message = await installVersion(mod, version, { force });
+    toast.success(`${mod.name}: ${message}`);
+    setInstalledVersionState(version.version);
+    onChanged();
+  }
+
   async function handleInstall(version: ModVersion) {
     if (!mod) return;
     setAction({ status: "working" });
     try {
-      const message = await installVersion(mod, version);
-      toast.success(`${mod.name}: ${message}`);
-      setInstalledVersionState(version.version);
-      onChanged();
+      await performInstall(version, false);
     } catch (e) {
-      toast.error(String(e));
+      if (e instanceof ModConflictError) {
+        if (await requestConfirm(e.conflicts)) {
+          try {
+            await performInstall(version, true);
+          } catch (e2) {
+            toast.error(String(e2));
+          }
+        }
+      } else {
+        toast.error(String(e));
+      }
     } finally {
       setAction({ status: "idle" });
     }
@@ -164,6 +181,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
 
   return (
     <div className="mod-detail fade-in">
+      {conflictModal}
       <button className="button" onClick={onBack}>← Back</button>
 
       {loading && <p><span className="spinner" /> Loading…</p>}

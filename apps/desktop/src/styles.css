@@ -1709,6 +1709,11 @@ body {
   height: auto;
 }
 
+.conflict-dialog__list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
 /* --- Pluto syntax highlighting --- */
 
 .tok-keyword {

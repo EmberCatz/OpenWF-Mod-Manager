@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { ModVersion, ModWithVersions } from "@openwf-mod-manager/shared";
 import { fetchModList } from "../api";
-import { installVersion, uninstallMod } from "../modActions";
+import { installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { getIgnoredOrphans, ignoreOrphan, listInstalled, setInstalled, type InstalledEntry } from "../installed";
 import { getMetadataPatchesPath, getScriptsPath } from "../settings";
 import { scanInstallFolder, uninstallFiles } from "../native";
 import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
+import { useConflictConfirm } from "../components/ConflictConfirmDialog";
 
 type ActionState = { status: "idle" | "working" };
 
@@ -44,6 +45,7 @@ export default function InstalledMods() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [orphanState, setOrphanState] = useState<OrphanState>("idle");
   const [orphanBusy, setOrphanBusy] = useState<string | null>(null);
+  const { requestConfirm, modal: conflictModal } = useConflictConfirm();
 
   function load() {
     setError(null);
@@ -66,16 +68,31 @@ export default function InstalledMods() {
 
   useEffect(load, [refreshKey]);
 
+  async function performUpdate(row: Row, version: ModVersion, force: boolean) {
+    if (!row.mod) return;
+    const message = await installVersion(row.mod, version, { force });
+    toast.success(`${row.mod.name}: ${message}`);
+    setRefreshKey((k) => k + 1);
+  }
+
   async function handleUpdateOrReinstall(row: Row) {
     const version = row.mod?.versions[0];
     if (!row.mod || !version) return;
     setActions((s) => ({ ...s, [row.entry.modId]: { status: "working" } }));
     try {
-      const message = await installVersion(row.mod, version);
-      toast.success(`${row.mod.name}: ${message}`);
-      setRefreshKey((k) => k + 1);
+      await performUpdate(row, version, false);
     } catch (e) {
-      toast.error(String(e));
+      if (e instanceof ModConflictError) {
+        if (await requestConfirm(e.conflicts)) {
+          try {
+            await performUpdate(row, version, true);
+          } catch (e2) {
+            toast.error(String(e2));
+          }
+        }
+      } else {
+        toast.error(String(e));
+      }
     } finally {
       setActions((s) => ({ ...s, [row.entry.modId]: { status: "idle" } }));
     }
@@ -207,6 +224,7 @@ export default function InstalledMods() {
 
   return (
     <div className="fade-in">
+      {conflictModal}
       {rows.length === 0 && <p className="muted">Nothing installed yet — head to Browse to find something.</p>}
 
       {outdatedCount > 0 && (

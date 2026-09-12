@@ -7,6 +7,22 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] File-conflict detection before install — the first half of "nothing
+      checks whether two installed mods write to the same file." New Rust
+      dry-run commands (`compute_install_file_path`, `list_zip_install_paths`)
+      report exactly where a pending install would write *without* writing
+      anything, guaranteed byte-identical to what the real install would do
+      (proven by a unit test that runs both and diffs the result).
+      `installVersion` (`modActions.ts`) checks that against every *other*
+      installed mod's tracked files and throws `ModConflictError` instead of
+      silently overwriting; Browse, mod detail, and Installed Mods all catch
+      it and show a shared confirm dialog (`ConflictConfirmDialog.tsx`,
+      mirroring the reauth-prompt hook pattern) offering "Install anyway."
+      Choosing to proceed anyway also prunes the overwritten paths from the
+      other mod's own tracked files (dropping its entry entirely if nothing
+      it still owns is left) so a later uninstall of *that* mod can't
+      collateral-damage the new one. Author-declared "requires X"/"conflicts
+      with Y" is the still-open other half — see Ideas below.
 - [x] Author reply badge on comments — turned out to need no backend work
       at all: `comments.author_account_id` (added for the comment-
       impersonation fix) was already a real, verified link set only when
@@ -151,8 +167,6 @@ testing) rather than letting them evaporate.
       use, like the existing IP-ban pattern in `routes/admin.ts`).
 
 ## Ideas, not committed to yet
-- [ ] Auto-detect a likely Warframe install path instead of requiring manual
-      folder selection in Settings
 - [ ] Mod Settings tab — let players adjust exposed values in a `.pluto`
       mod (e.g. "how many enemies does this spawn") from the app instead
       of editing script source. On hold pending feedback from mod authors
@@ -184,12 +198,14 @@ testing) rather than letting them evaporate.
       - Docker doesn't complicate reachability — the Server WebUI tab
         already proves the container's HTTP port is published to the
         host, same port a client-API integration would use.
-- [ ] Mod conflict/dependency declarations — nothing today checks whether
-      two installed mods write to the same file, or lets a mod declare
-      "requires X" / "conflicts with Y." Fine at today's catalog size;
-      starts to matter once there are enough overlapping cosmetic mods for
-      the same slot that silent overwrite-on-install becomes a real
-      support headache.
+- [ ] Author-declared "requires X" / "conflicts with Y" between mods — the
+      other half of the item above this used to be (file-conflict
+      *detection* now ships, see Recently shipped): that's the system
+      noticing an actual collision, this would be an author stating intent
+      up front (needs new mod metadata, an Upload-form field, and an
+      install-time check against it). Bigger lift — schema + upload UI, not
+      just client-side path math — so left as a distinct follow-up rather
+      than bundled into the detection work.
 - [ ] Snapshot/restore of the Warframe install folders before an install —
       today's uninstall only removes exactly what *that mod's* install
       wrote (by design), so there's no generic "put my install back to how

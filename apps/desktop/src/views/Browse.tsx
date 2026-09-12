@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import type { ModWithVersions } from "@openwf-mod-manager/shared";
+import type { ModVersion, ModWithVersions } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
 import { fetchModList } from "../api";
-import { canAutoInstall, downloadVersion, installVersion, uninstallMod } from "../modActions";
+import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
 import { CheckCircleIcon, CommentIcon, DownloadIcon, GridIcon, ListIcon, RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import ModDetail from "../components/ModDetail";
 import SplitButton from "../components/SplitButton";
+import { useConflictConfirm } from "../components/ConflictConfirmDialog";
 import StarRating from "../components/StarRating";
 import ClampedText from "../components/ClampedText";
 import GameVersionPicker from "../components/GameVersionPicker";
@@ -112,6 +113,7 @@ export default function Browse() {
   // Bumped after every install/uninstall so installed-state badges re-read
   // localStorage instead of going stale after an action.
   const [installedVersion, setInstalledVersion] = useState(0);
+  const { requestConfirm, modal: conflictModal } = useConflictConfirm();
 
   useEffect(() => {
     fetchModList()
@@ -161,16 +163,30 @@ export default function Browse() {
     setPage(1);
   }
 
+  async function performInstall(mod: ModWithVersions, version: ModVersion, force: boolean) {
+    const message = await installVersion(mod, version, { force });
+    toast.success(`${mod.name}: ${message}`);
+    setInstalledVersion((v) => v + 1);
+  }
+
   async function handleInstall(mod: ModWithVersions) {
     const version = mod.versions[0];
     if (!version) return;
     setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
     try {
-      const message = await installVersion(mod, version);
-      toast.success(`${mod.name}: ${message}`);
-      setInstalledVersion((v) => v + 1);
+      await performInstall(mod, version, false);
     } catch (e) {
-      toast.error(String(e));
+      if (e instanceof ModConflictError) {
+        if (await requestConfirm(e.conflicts)) {
+          try {
+            await performInstall(mod, version, true);
+          } catch (e2) {
+            toast.error(String(e2));
+          }
+        }
+      } else {
+        toast.error(String(e));
+      }
     } finally {
       setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
     }
@@ -239,6 +255,8 @@ export default function Browse() {
   const pageMods = sortedMods.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
+    <>
+      {conflictModal}
     <div className="browse-layout">
       <aside className="browse-sidebar">
         <div className="sidebar-section">
@@ -560,5 +578,6 @@ export default function Browse() {
         )}
       </div>
     </div>
+    </>
   );
 }
