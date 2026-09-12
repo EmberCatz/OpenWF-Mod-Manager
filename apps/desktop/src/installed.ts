@@ -46,3 +46,24 @@ export function clearInstalled(modId: string): void {
 export function listInstalled(): InstalledEntry[] {
   return Object.values(readAll());
 }
+
+// Files an orphan-scan found but the user chose to leave alone (their own
+// unrelated script sitting in the same folder, say) — remembered so they
+// don't keep resurfacing on every future scan. Separate localStorage key
+// from the installed-entries map above since these were deliberately never
+// "installed" by this app and never will be.
+const IGNORED_ORPHANS_KEY = "owmm.ignoredOrphans";
+
+export function getIgnoredOrphans(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(IGNORED_ORPHANS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+export function ignoreOrphan(path: string): void {
+  const all = new Set(getIgnoredOrphans());
+  all.add(path);
+  localStorage.setItem(IGNORED_ORPHANS_KEY, JSON.stringify([...all]));
+}

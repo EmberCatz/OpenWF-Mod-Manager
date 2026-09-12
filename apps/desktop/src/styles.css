@@ -772,6 +772,16 @@ body {
 
 /* --- Installed Mods tab --- */
 
+.installed-mods__orphans {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.installed-mods__orphans .mod-list {
+  margin-top: 1rem;
+}
+
 .installed-mods__banner {
   display: flex;
   align-items: center;

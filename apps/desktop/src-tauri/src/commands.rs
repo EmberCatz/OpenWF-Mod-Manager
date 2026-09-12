@@ -284,6 +284,39 @@ pub fn uninstall_files(paths: Vec<String>) -> Result<(), String> {
     }
 }
 
+// Recursively collects every file (not directory) under `dir`, as absolute
+// path strings in the same `.display().to_string()` format install_mod_file
+// / install_mod_zip already use — so the frontend can directly diff this
+// against installed.ts's stored paths to find files it doesn't know about
+// (manually dropped in from the old Discord-link workflow this app exists
+// to replace). A missing folder returns an empty list rather than an error
+// — nothing installed there yet isn't a failure.
+fn collect_files(dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    let read_dir = match fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("failed to read '{}': {e}", dir.display())),
+    };
+    for entry in read_dir {
+        let entry = entry.map_err(|e| format!("failed to read an entry in '{}': {e}", dir.display()))?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|e| format!("failed to stat '{}': {e}", path.display()))?;
+        if file_type.is_dir() {
+            collect_files(&path, out)?;
+        } else if file_type.is_file() {
+            out.push(path.display().to_string());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn scan_install_folder(dir: String) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    collect_files(&PathBuf::from(&dir), &mut out)?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +355,25 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(fs::read(tmp.join("payload.txt")).unwrap(), content);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn scan_install_folder_finds_nested_files_and_ignores_missing_dirs() {
+        let tmp = std::env::temp_dir().join(format!("owmm-scantest-{}", std::process::id()));
+        let nested = tmp.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(tmp.join("top.pluto"), b"a").unwrap();
+        fs::write(nested.join("inner.txt"), b"b").unwrap();
+
+        let found = scan_install_folder(tmp.display().to_string()).unwrap();
+        assert_eq!(found.len(), 2, "should find both the top-level and nested file");
+        assert!(found.iter().any(|p| p.ends_with("top.pluto")));
+        assert!(found.iter().any(|p| p.ends_with("inner.txt")));
+
+        let missing = tmp.join("does-not-exist");
+        assert_eq!(scan_install_folder(missing.display().to_string()).unwrap(), Vec::<String>::new());
 
         let _ = fs::remove_dir_all(&tmp);
     }

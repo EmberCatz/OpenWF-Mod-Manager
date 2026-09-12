@@ -20,6 +20,19 @@ testing) rather than letting them evaporate.
       the UI once its Browse listing was gone. `listInstalled()` is the one
       new export (`installed.ts`); everything else reuses existing
       `modActions.ts` functions.
+
+      Also folds in the separately-tracked orphan-file scan idea: a new
+      Rust command (`scan_install_folder`, recursive, covered by its own
+      unit tests) lists everything actually sitting in the configured
+      Metadata Patches/Scripts folders, diffed against every
+      `InstalledEntry.installedFiles` to surface files this app never put
+      there — the old Discord-link workflow's leftovers. Each orphan gets
+      matched by exact filename against every mod's latest-version
+      `fileName` for a best-guess "Adopt as X v1.2.3" suggestion (only ever
+      fires for raw single-file mods — a zip's own filename never matches
+      what's inside it, a known, accepted gap), plus unconditional
+      Remove/Ignore actions; ignored paths persist (`owmm.ignoredOrphans`)
+      so they don't resurface on every scan.
 - [x] Real app icon — an ornate gem/flame emblem replacing the flat
       placeholder square (`apps/desktop/src-tauri/icons/`, source kept as
       `source.png` for regeneration via `tauri icon`). Also used as the
@@ -151,12 +164,6 @@ testing) rather than letting them evaporate.
       starts to matter once there are enough overlapping cosmetic mods for
       the same slot that silent overwrite-on-install becomes a real
       support headache.
-- [ ] Orphan-file scan — `installed.ts` only knows what *this app* wrote to
-      disk. Files someone dropped in manually (the old Discord-link
-      workflow this app exists to replace) are invisible to it. A "scan
-      the Metadata Patches/Scripts folders, tell me what's untracked, let
-      me adopt or remove it" pass would smooth over migrating existing
-      installs.
 - [ ] Author analytics — `download_count` and `reviews` already track
       totals; there's no trend-over-time view (downloads/ratings by week)
       for someone who's uploaded a mod, which is the more useful shape of

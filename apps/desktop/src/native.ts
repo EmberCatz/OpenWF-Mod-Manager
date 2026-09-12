@@ -62,6 +62,14 @@ export async function uninstallFiles(paths: string[]): Promise<void> {
   await invoke("uninstall_files", { paths });
 }
 
+// Recursively lists every file under `dir` as an absolute path — used to
+// diff an install folder's actual contents against installed.ts and find
+// files this app didn't put there (installedMods.ts's orphan-file scan). A
+// folder that doesn't exist yet returns an empty list, not an error.
+export async function scanInstallFolder(dir: string): Promise<string[]> {
+  return invoke<string[]>("scan_install_folder", { dir });
+}
+
 export interface ZipTextEntry {
   name: string;
   content: string;
