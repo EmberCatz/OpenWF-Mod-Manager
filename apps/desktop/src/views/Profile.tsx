@@ -4,13 +4,7 @@ import { fetchModderProfile } from "../api";
 import { closeProfile } from "../profileNav";
 import Avatar from "../components/Avatar";
 import ModDetail from "../components/ModDetail";
-import defaultThumbnail from "../assets/thumbnails/default-thumbnail.jpg";
-
-function formatCount(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-}
+import ModCard from "../components/ModCard";
 
 // A creator's public profile — opened from any AuthorLink across the app
 // (mod cards, ModDetail, comments) via profileNav.ts, not a normal tab.
@@ -60,37 +54,15 @@ export default function Profile({ accountId }: { accountId: string }) {
             <p className="muted">No published mods yet.</p>
           ) : (
             <ul className="mod-list mod-list--grid">
-              {profile.mods.map((mod, i) => {
-                const hasThumb = !!mod.thumbnailUrl;
-                const style = { animationDelay: `${Math.min(i, 8) * 35}ms` };
-                return (
-                  <li key={mod.id} className="mod-card mod-card--grid fade-in" style={style}>
-                    <div className="mod-card__thumb-wrap">
-                      <img
-                        className="mod-card__thumb"
-                        src={hasThumb ? mod.thumbnailUrl! : defaultThumbnail}
-                        alt=""
-                        style={{ objectPosition: hasThumb ? mod.thumbnailPosition : "50% 50%" }}
-                      />
-                      {!hasThumb && (
-                        <button className="mod-card__thumb-overlay-title" onClick={() => setOpenModId(mod.id)}>
-                          {mod.name}
-                        </button>
-                      )}
-                    </div>
-                    <div className="mod-card__grid-body">
-                      <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
-                        {mod.name}
-                      </button>
-                      <div className="mod-card__grid-meta">
-                        <span className="mod-card__meta-stat" title={`${mod.downloadCount} downloads`}>
-                          {formatCount(mod.downloadCount)} downloads
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
+              {profile.mods.map((mod, i) => (
+                <ModCard
+                  key={mod.id}
+                  mod={mod}
+                  viewMode="grid"
+                  onOpen={() => setOpenModId(mod.id)}
+                  style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}
+                />
+              ))}
             </ul>
           )}
         </>

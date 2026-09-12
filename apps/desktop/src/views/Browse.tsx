@@ -1,31 +1,14 @@
 import { useEffect, useState } from "react";
-import type { ModVersion, ModWithVersions } from "@openwf-mod-manager/shared";
+import type { ModWithVersions } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
-import { fetchModList, toggleLike } from "../api";
-import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
-import { getInstalled } from "../installed";
-import { getReviewerId } from "../reviewerId";
-import { isLiked, setLiked } from "../likedMods";
-import { CheckCircleIcon, CommentIcon, DownloadIcon, GridIcon, ListIcon, RefreshIcon, TrashIcon } from "../icons";
-import { toast } from "../toast";
+import { fetchModList } from "../api";
+import { GridIcon, ListIcon } from "../icons";
 import ModDetail from "../components/ModDetail";
-import SplitButton from "../components/SplitButton";
-import { useConflictConfirm } from "../components/ConflictConfirmDialog";
-import LikeButton from "../components/LikeButton";
-import ClampedText from "../components/ClampedText";
+import ModCard, { CATEGORY_LABELS } from "../components/ModCard";
 import GameVersionPicker from "../components/GameVersionPicker";
-import AuthorLink from "../components/AuthorLink";
-import defaultThumbnail from "../assets/thumbnails/default-thumbnail.jpg";
 
-type ActionState = { status: "idle" | "working" };
 type ViewMode = "list" | "grid";
 type SortKey = "downloads" | "name" | "new" | "updated" | "score";
-
-const CATEGORY_LABELS: Record<string, string> = {
-  "metadata-patch": "Metadata Patch",
-  "pluto-script": "Pluto Script",
-  other: "Other",
-};
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS);
 const VIEW_MODE_KEY = "owmm.browseViewMode";
@@ -41,35 +24,6 @@ const SORT_LABELS: Record<SortKey, string> = {
 };
 const SORT_KEYS = Object.keys(SORT_LABELS) as SortKey[];
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
-
-// Shown in grid view when a mod has no thumbnailUrl, so every card gets
-// the same picture-above-title layout. Bundled with the app itself (see
-// src/assets/README.md) — distinct from mod thumbnails, which stay
-// external-link-only (see docs/architecture.md).
-const DEFAULT_THUMBNAIL_URL = defaultThumbnail;
-
-function formatGameVersions(tags: string[]): string {
-  if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";
-  if (tags.length <= 3) return tags.join(", ");
-  return `${tags.slice(0, 3).join(", ")} +${tags.length - 3} more`;
-}
-
-function formatCount(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-}
-
-// Shows the update date once a mod has actually been changed since its
-// initial upload, otherwise the original upload date.
-function formatModDate(mod: ModWithVersions): string {
-  const updated = new Date(mod.updatedAt).getTime();
-  const created = new Date(mod.createdAt).getTime();
-  const isUpdated = updated > created;
-  const label = isUpdated ? "Updated" : "Uploaded";
-  const date = new Date(isUpdated ? mod.updatedAt : mod.createdAt).toLocaleDateString();
-  return `${label} ${date}`;
-}
 
 function sortMods(mods: ModWithVersions[], key: SortKey): ModWithVersions[] {
   const sorted = [...mods];
@@ -91,17 +45,12 @@ export default function Browse() {
   const [mods, setMods] = useState<ModWithVersions[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
   const [activeThemes, setActiveThemes] = useState<Set<string>>(new Set());
   const [versionFilter, setVersionFilter] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [openModId, setOpenModId] = useState<string | null>(null);
-  // Mod ids whose thumbnailUrl failed to actually load (dead link, or a
-  // page URL rather than a direct image URL) — treated the same as "no
-  // thumbnail" rather than showing a broken-image icon.
-  const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => (localStorage.getItem(VIEW_MODE_KEY) as ViewMode | null) ?? "list"
   );
@@ -112,10 +61,11 @@ export default function Browse() {
     () => Number(localStorage.getItem(PAGE_SIZE_STORAGE)) || 20
   );
   const [page, setPage] = useState(1);
-  // Bumped after every install/uninstall so installed-state badges re-read
-  // localStorage instead of going stale after an action.
-  const [installedVersion, setInstalledVersion] = useState(0);
-  const { requestConfirm, modal: conflictModal } = useConflictConfirm();
+  // Bumped after ModDetail performs an install/uninstall (its own separate
+  // instance, not any of the ModCard grid/list items below) — just needs to
+  // force Browse to re-render so its ModCards re-read localStorage instead
+  // of showing stale installed-state; each ModCard tracks its own actions.
+  const [, setInstalledVersion] = useState(0);
 
   useEffect(() => {
     fetchModList()
@@ -141,10 +91,6 @@ export default function Browse() {
     setPage(1);
   }
 
-  function markThumbBroken(modId: string) {
-    setBrokenThumbs((s) => (s.has(modId) ? s : new Set(s).add(modId)));
-  }
-
   function toggleCategory(cat: string) {
     setActiveCategories((s) => {
       const next = new Set(s);
@@ -163,76 +109,6 @@ export default function Browse() {
       return next;
     });
     setPage(1);
-  }
-
-  async function performInstall(mod: ModWithVersions, version: ModVersion, force: boolean) {
-    const message = await installVersion(mod, version, { force });
-    toast.success(`${mod.name}: ${message}`);
-    setInstalledVersion((v) => v + 1);
-  }
-
-  async function handleInstall(mod: ModWithVersions) {
-    const version = mod.versions[0];
-    if (!version) return;
-    setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
-    try {
-      await performInstall(mod, version, false);
-    } catch (e) {
-      if (e instanceof ModConflictError) {
-        if (await requestConfirm(e.conflicts)) {
-          try {
-            await performInstall(mod, version, true);
-          } catch (e2) {
-            toast.error(String(e2));
-          }
-        }
-      } else {
-        toast.error(String(e));
-      }
-    } finally {
-      setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
-    }
-  }
-
-  async function handleDownload(mod: ModWithVersions) {
-    const version = mod.versions[0];
-    if (!version) return;
-    setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
-    try {
-      const message = await downloadVersion(version);
-      if (message) toast.success(`${mod.name}: ${message}`);
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
-    }
-  }
-
-  async function handleUninstall(mod: ModWithVersions) {
-    setActions((s) => ({ ...s, [mod.id]: { status: "working" } }));
-    try {
-      await uninstallMod(mod.id);
-      toast.success(`${mod.name}: Uninstalled`);
-      setInstalledVersion((v) => v + 1);
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setActions((s) => ({ ...s, [mod.id]: { status: "idle" } }));
-    }
-  }
-
-  // Directly togglable from the card, not just Mod Detail — the card's
-  // initial liked state comes from the local cache (likedMods.ts) so this
-  // doesn't need a per-mod request just to render, and stays in sync with
-  // it on every toggle.
-  async function handleToggleLike(mod: ModWithVersions) {
-    try {
-      const summary = await toggleLike(mod.id, getReviewerId());
-      setLiked(mod.id, summary.liked);
-      setMods((prev) => prev.map((m) => (m.id === mod.id ? { ...m, likeCount: summary.count } : m)));
-    } catch (e) {
-      toast.error(String(e));
-    }
   }
 
   if (openModId) {
@@ -271,8 +147,6 @@ export default function Browse() {
   const pageMods = sortedMods.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
-    <>
-      {conflictModal}
     <div className="browse-layout">
       <aside className="browse-sidebar">
         <div className="sidebar-section">
@@ -389,196 +263,19 @@ export default function Browse() {
         ) : (
           <>
             <ul className={`mod-list ${viewMode === "grid" ? "mod-list--grid" : ""}`}>
-              {pageMods.map((mod, i) => {
-                const version = mod.versions[0];
-                const action = actions[mod.id] ?? { status: "idle" };
-                const autoInstallable = canAutoInstall(mod.category);
-                // installedVersion isn't read here directly, but bumping it via
-                // setInstalledVersion() after install/uninstall still triggers
-                // this component to re-render, which re-reads localStorage below.
-                const installedEntry = getInstalled(mod.id);
-                const isUpToDate = !!installedEntry && !!version && installedEntry.version === version.version;
-                const working = action.status === "working";
-                const style = { animationDelay: `${Math.min(i, 8) * 35}ms` };
-
-                const installLabel = autoInstallable
-                  ? isUpToDate
-                    ? "Reinstall"
-                    : installedEntry
-                      ? "Update"
-                      : "Install"
-                  : "Download";
-                const onInstallOrDownload = () => (autoInstallable ? handleInstall(mod) : handleDownload(mod));
-                const hasThumb = !!mod.thumbnailUrl && !brokenThumbs.has(mod.id);
-
-                if (viewMode === "grid") {
-                  return (
-                    <li key={mod.id} className="mod-card mod-card--grid fade-in" style={style}>
-                      <div className="mod-card__thumb-wrap">
-                        <img
-                          className="mod-card__thumb"
-                          src={hasThumb ? mod.thumbnailUrl! : DEFAULT_THUMBNAIL_URL}
-                          alt=""
-                          style={{ objectPosition: hasThumb ? mod.thumbnailPosition : "50% 50%" }}
-                          onError={() => mod.thumbnailUrl && markThumbBroken(mod.id)}
-                        />
-                        {!hasThumb && (
-                          <button className="mod-card__thumb-overlay-title" onClick={() => setOpenModId(mod.id)}>
-                            {mod.name}
-                          </button>
-                        )}
-                      </div>
-                      <div className="mod-card__grid-body">
-                        <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
-                          {mod.name}
-                        </button>
-                        <span className="mod-card__author">
-                          by <AuthorLink name={mod.author} accountId={mod.ownerId} />
-                          {mod.subAuthor && <> · with {mod.subAuthor}</>}
-                        </span>
-                        <div className="mod-card__grid-meta">
-                          <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
-                          {mod.theme && <span className="badge">{mod.theme}</span>}
-                        </div>
-                        <div className="mod-card__grid-meta">
-                          <span className="mod-card__meta-stat" title={`${mod.downloadCount} downloads`}>
-                            <DownloadIcon className="btn-icon" />
-                            {formatCount(mod.downloadCount)}
-                          </span>
-                          <span className="mod-card__meta-stat" title={`${mod.commentCount ?? 0} comments`}>
-                            <CommentIcon className="btn-icon" />
-                            {mod.commentCount ?? 0}
-                          </span>
-                          <LikeButton
-                            liked={isLiked(mod.id)}
-                            count={mod.likeCount ?? 0}
-                            size="sm"
-                            onToggle={() => handleToggleLike(mod)}
-                          />
-                          <span className="mod-card__meta-date">{formatModDate(mod)}</span>
-                        </div>
-                        <div className="mod-card__grid-actions">
-                          {version ? (
-                            isUpToDate ? (
-                              <SplitButton
-                                mainLabel={<><TrashIcon className="btn-icon" /> Uninstall</>}
-                                mainClassName="button--danger"
-                                disabled={working}
-                                onMain={() => handleUninstall(mod)}
-                                menuItems={[
-                                  {
-                                    label: <><RefreshIcon className="btn-icon" /> Reinstall</>,
-                                    onClick: onInstallOrDownload,
-                                  },
-                                ]}
-                              />
-                            ) : (
-                              <button
-                                className={`button ${installedEntry ? "button--update" : autoInstallable ? "button--install" : "button--download"}`}
-                                disabled={working}
-                                onClick={onInstallOrDownload}
-                              >
-                                {working && <span className="spinner" />}
-                                {working ? "Working…" : installLabel}
-                              </button>
-                            )
-                          ) : (
-                            <span className="muted">No versions yet</span>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                }
-
-                return (
-                  <li key={mod.id} className="mod-card fade-in" style={style}>
-                    <div className="mod-card__body">
-                      {hasThumb && (
-                        <img
-                          className="mod-card__thumb"
-                          src={mod.thumbnailUrl!}
-                          alt=""
-                          style={{ objectPosition: mod.thumbnailPosition }}
-                          onError={() => markThumbBroken(mod.id)}
-                        />
-                      )}
-                      <div className="mod-card__main">
-                        <div className="mod-card__header">
-                          <button className="mod-card__name mod-card__name--link" onClick={() => setOpenModId(mod.id)}>
-                            {mod.name}
-                          </button>
-                          <span className="mod-card__author">
-                            by <AuthorLink name={mod.author} accountId={mod.ownerId} />
-                            {mod.subAuthor && <> · with {mod.subAuthor}</>}
-                          </span>
-                        </div>
-                        <ClampedText className="mod-card__description" text={mod.description} lines={3} />
-                        {mod.tags.length > 0 && (
-                          <div className="mod-card__tags">
-                            {mod.tags.map((t) => (
-                              <button
-                                key={t}
-                                className="badge badge--tag"
-                                onClick={() => {
-                                  setActiveTag(t);
-                                  setPage(1);
-                                }}
-                              >
-                                {t}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        <div className="mod-card__footer">
-                          <span className="badge">{CATEGORY_LABELS[mod.category] ?? mod.category}</span>
-                          {mod.theme && <span className="badge">{mod.theme}</span>}
-                          {version && <span className="muted">{formatGameVersions(version.gameVersions)}</span>}
-                          <span className="mod-card__meta-stat" title={`${mod.downloadCount} downloads`}>
-                            <DownloadIcon className="btn-icon" />
-                            {formatCount(mod.downloadCount)}
-                          </span>
-                          <span className="mod-card__meta-stat" title={`${mod.commentCount ?? 0} comments`}>
-                            <CommentIcon className="btn-icon" />
-                            {mod.commentCount ?? 0}
-                          </span>
-                          <LikeButton
-                            liked={isLiked(mod.id)}
-                            count={mod.likeCount ?? 0}
-                            size="sm"
-                            onToggle={() => handleToggleLike(mod)}
-                          />
-                          <span className="mod-card__meta-date">{formatModDate(mod)}</span>
-                          {isUpToDate && (
-                            <span className="badge badge--installed">
-                              <CheckCircleIcon className="btn-icon" /> Installed
-                            </span>
-                          )}
-                          {version && <span className="mod-card__version">v{version.version}</span>}
-                          {version && (
-                            <button
-                              className={`button button--lg ${
-                                isUpToDate ? "button--reinstall" : installedEntry ? "button--update" : autoInstallable ? "button--install" : "button--download"
-                              }`}
-                              disabled={working}
-                              onClick={onInstallOrDownload}
-                            >
-                              {working && <span className="spinner" />}
-                              {!working && isUpToDate && <RefreshIcon className="btn-icon" />}
-                              {working ? "Working…" : installLabel}
-                            </button>
-                          )}
-                          {autoInstallable && installedEntry && isUpToDate && (
-                            <button className="button button--lg button--danger" disabled={working} onClick={() => handleUninstall(mod)}>
-                              <TrashIcon className="btn-icon" /> Uninstall
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
+              {pageMods.map((mod, i) => (
+                <ModCard
+                  key={mod.id}
+                  mod={mod}
+                  viewMode={viewMode}
+                  onOpen={() => setOpenModId(mod.id)}
+                  onTagClick={(t) => {
+                    setActiveTag(t);
+                    setPage(1);
+                  }}
+                  style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}
+                />
+              ))}
             </ul>
 
             {totalPages > 1 && (
@@ -598,6 +295,5 @@ export default function Browse() {
         )}
       </div>
     </div>
-    </>
   );
 }
