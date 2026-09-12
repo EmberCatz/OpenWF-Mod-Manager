@@ -1,10 +1,11 @@
 // Hardcoded game-version compatibility tags, sourced from
-// https://about.openwf.io/versions (a raw scrape, not an AI summary — see
-// git history for the exact fetch). Every distinct version number on that
-// page is included (not just major update names) since patch-level
-// compatibility genuinely matters for metadata patches / scripts that
-// touch specific client data. Re-derive by re-scraping that page and
-// re-running the same extraction if it needs updating.
+// https://about.openwf.io/versions. Regenerate with `npm run scrape:versions`
+// (packages/shared/scripts/scrape-game-versions.mjs) rather than editing by
+// hand — a scheduled GitHub Actions workflow also runs it weekly and opens a
+// PR if the site has new versions (see .github/workflows/scrape-game-versions.yml).
+// Every distinct version number on that page is included (not just major
+// update names) since patch-level compatibility genuinely matters for
+// metadata patches / scripts that touch specific client data.
 //
 // "all" is a sentinel, not a real version: a mod tagged with it is claimed
 // compatible with every version, mutually exclusive with picking specific

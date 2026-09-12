@@ -7,6 +7,17 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Automated `gameVersions.ts` regeneration — was a one-off point-in-time
+      scrape of about.openwf.io/versions that wouldn't pick up new patches
+      until someone manually re-scraped it. New
+      `packages/shared/scripts/scrape-game-versions.mjs` (zero deps, plain
+      `fetch`) parses the version table correctly — the real signal is each
+      row's `=`/`≈`/`<` comparison prefix, not the row's `id` attribute or
+      "Kind" column, both of which looked plausible but silently dropped
+      most real versions when tried first. A weekly GitHub Actions workflow
+      (`.github/workflows/scrape-game-versions.yml`) runs it and opens a PR
+      only if the output actually changed — never auto-commits, since a
+      redesign of that page could otherwise ship garbled data unreviewed.
 - [x] Mod Rating System Overhaul — replaced 0-5 star reviews with a single
       Like toggle. `reviews` D1 table dropped in favor of `mod_likes`
       (mod_id, reviewer_id); existing reviews were carried over 1-for-1 as
@@ -304,8 +315,3 @@ by an application-layer code change alone, or weren't in scope of either pass.
       hits. The zone-level Rate Limiting *Rules* product (the original
       custom-domain idea) is still on the table later as a broader WAF
       layer, but isn't needed just to close this specific gap.
-
-## Known correctness gaps
-- [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of
-      about.openwf.io/versions — won't pick up new patches until someone
-      re-scrapes and regenerates the file

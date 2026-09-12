@@ -1,0 +1,49 @@
+name: Scrape game versions
+
+# Regenerates packages/shared/src/gameVersions.ts from
+# https://about.openwf.io/versions and opens a PR only if that produces an
+# actual diff. Deliberately never pushes straight to master — a redesign of
+# that page could silently mis-parse into garbage data, which is much
+# cheaper to catch as a PR diff than as a shipped bug (see
+# scripts/scrape-game-versions.mjs for the parsing logic and its own
+# don't-repeat-this-mistake note).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # every Monday, 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Regenerate gameVersions.ts
+        run: node packages/shared/scripts/scrape-game-versions.mjs
+
+      - name: Open PR if it changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Update game versions from about.openwf.io"
+          title: "Update game versions from about.openwf.io"
+          body: |
+            Automated weekly scrape of https://about.openwf.io/versions.
+
+            Review the diff before merging — this is generated from a page
+            scrape, not hand-verified. A large or unexpected change (a big
+            jump in count, missing recent versions, garbled titles) usually
+            means the site's markup changed and
+            `packages/shared/scripts/scrape-game-versions.mjs` needs an
+            update, not that the data is actually right.
+          branch: auto/scrape-game-versions
+          delete-branch: true
+          labels: automated

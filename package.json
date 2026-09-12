@@ -11,6 +11,7 @@
     "build:desktop": "npm run tauri build --workspace apps/desktop",
     "dev:api": "npm run dev --workspace apps/api",
     "deploy:api": "npm run deploy --workspace apps/api",
-    "db:init": "npm run db:init --workspace apps/api"
+    "db:init": "npm run db:init --workspace apps/api",
+    "scrape:versions": "npm run scrape:versions --workspace packages/shared"
   }
 }
