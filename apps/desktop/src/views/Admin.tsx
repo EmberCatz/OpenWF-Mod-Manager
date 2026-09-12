@@ -1,35 +1,46 @@
 import { useEffect, useState } from "react";
 import {
   banIp,
+  banTag,
   banUser,
+  deleteTheme,
   deleteUserAdmin,
   dismissReport,
   fetchAdminReports,
   fetchAdminUsers,
   fetchBannedIps,
   fetchSiteSettings,
+  fetchTagTaxonomy,
+  fetchThemeTaxonomy,
   killAllSessions,
+  removeTag,
+  renameTag,
+  renameTheme,
   resolveReport,
   unbanIp,
+  unbanTag,
   unbanUser,
   updateSiteSettings,
   type AdminReport,
   type AdminUser,
   type BannedIp,
   type SiteSettings,
+  type TagUsage,
+  type ThemeUsage,
 } from "../api";
 import { useAccount, useApiKey } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
 import { useStepUpReauth } from "../components/ReauthPrompt";
 
-type Section = "users" | "reports" | "controls";
+type Section = "users" | "reports" | "controls" | "taxonomy";
 type ReportFilter = "open" | "resolved" | "dismissed" | "all";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "reports", label: "Reports" },
   { id: "controls", label: "Site Controls" },
+  { id: "taxonomy", label: "Taxonomy" },
 ];
 
 // Gated on account.isAdmin at the App.tsx tab level, but every action here
@@ -61,8 +72,10 @@ export default function Admin() {
           <UsersPanel apiKey={apiKey} selfId={account?.id} />
         ) : section === "reports" ? (
           <ReportsPanel apiKey={apiKey} />
-        ) : (
+        ) : section === "controls" ? (
           <SiteControlsPanel apiKey={apiKey} />
+        ) : (
+          <TaxonomyPanel apiKey={apiKey} />
         )}
       </div>
     </div>
@@ -493,6 +506,373 @@ function ReportsPanel({ apiKey }: { apiKey: string }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+type TaxonomyTab = "themes" | "tags";
+const TAXONOMY_TABS: { id: TaxonomyTab; label: string }[] = [
+  { id: "themes", label: "Themes" },
+  { id: "tags", label: "Tags" },
+];
+
+// mods now carry a free-form theme + tags (see DEFAULT_MOD_THEMES/TagInput)
+// with no moderation at write time — this is the cleanup-after-the-fact
+// tooling: rename/merge/delete a theme across every mod using it, and
+// edit/remove/ban individual tags the same way Site Controls' banned-IPs
+// list blocks future abuse.
+function TaxonomyPanel({ apiKey }: { apiKey: string }) {
+  const [tab, setTab] = useState<TaxonomyTab>("themes");
+
+  return (
+    <div>
+      <div className="tabs tabs--sub">
+        {TAXONOMY_TABS.map((t) => (
+          <button key={t.id} className={`tab ${tab === t.id ? "tab--active" : ""}`} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "themes" ? <ThemesPanel apiKey={apiKey} /> : <TagsPanel apiKey={apiKey} />}
+    </div>
+  );
+}
+
+function ThemesPanel({ apiKey }: { apiKey: string }) {
+  const [themes, setThemes] = useState<ThemeUsage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyTheme, setBusyTheme] = useState<string | null>(null);
+  const [renamingTheme, setRenamingTheme] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+
+  function load() {
+    setLoading(true);
+    fetchThemeTaxonomy(apiKey)
+      .then(setThemes)
+      .catch((e) => toast.error(String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, [apiKey]);
+
+  async function handleRename(from: string) {
+    const to = renameValue.trim();
+    if (!to || to === from) {
+      setRenamingTheme(null);
+      return;
+    }
+    setBusyTheme(from);
+    try {
+      const { count } = await renameTheme(from, to, apiKey);
+      toast.success(`Renamed "${from}" to "${to}" on ${count} mod${count === 1 ? "" : "s"}.`);
+      setRenamingTheme(null);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTheme(null);
+    }
+  }
+
+  async function handleDelete(theme: string) {
+    setBusyTheme(theme);
+    try {
+      const { count } = await deleteTheme(theme, apiKey);
+      toast.success(`Reset ${count} mod${count === 1 ? "" : "s"} to Uncategorized.`);
+      setConfirmingDelete(null);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTheme(null);
+    }
+  }
+
+  if (loading) return <p><span className="spinner" /> Loading themes…</p>;
+
+  return (
+    <table className="admin-table">
+      <thead>
+        <tr>
+          <th>Theme</th>
+          <th>Mods</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {themes.map((t) => {
+          const busy = busyTheme === t.theme;
+          return (
+            <tr key={t.theme}>
+              <td>
+                {renamingTheme === t.theme ? (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleRename(t.theme)}
+                  />
+                ) : (
+                  t.theme
+                )}
+              </td>
+              <td className="muted">{t.count}</td>
+              <td>
+                <div className="field__row">
+                  {renamingTheme === t.theme ? (
+                    <>
+                      <button className="button" disabled={busy} onClick={() => handleRename(t.theme)}>
+                        Save
+                      </button>
+                      <button className="button" onClick={() => setRenamingTheme(null)}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setRenamingTheme(t.theme);
+                        setRenameValue(t.theme);
+                      }}
+                    >
+                      Rename / Merge
+                    </button>
+                  )}
+                  {t.theme !== "Uncategorized" &&
+                    (confirmingDelete === t.theme ? (
+                      <>
+                        <button className="button button--danger" disabled={busy} onClick={() => handleDelete(t.theme)}>
+                          Confirm
+                        </button>
+                        <button className="button" onClick={() => setConfirmingDelete(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button className="button button--danger" disabled={busy} onClick={() => setConfirmingDelete(t.theme)}>
+                        <TrashIcon className="btn-icon" /> Delete
+                      </button>
+                    ))}
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function TagsPanel({ apiKey }: { apiKey: string }) {
+  const [tags, setTags] = useState<TagUsage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyTag, setBusyTag] = useState<string | null>(null);
+  const [renamingTag, setRenamingTag] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
+  const [newBanTag, setNewBanTag] = useState("");
+  const [newBanReason, setNewBanReason] = useState("");
+
+  function load() {
+    setLoading(true);
+    fetchTagTaxonomy(apiKey)
+      .then(setTags)
+      .catch((e) => toast.error(String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, [apiKey]);
+
+  async function handleRename(from: string) {
+    const to = renameValue.trim();
+    if (!to || to === from) {
+      setRenamingTag(null);
+      return;
+    }
+    setBusyTag(from);
+    try {
+      const { count } = await renameTag(from, to, apiKey);
+      toast.success(`Renamed "${from}" to "${to}" on ${count} mod${count === 1 ? "" : "s"}.`);
+      setRenamingTag(null);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTag(null);
+    }
+  }
+
+  async function handleRemove(tag: string) {
+    setBusyTag(tag);
+    try {
+      const { count } = await removeTag(tag, apiKey);
+      toast.success(`Removed "${tag}" from ${count} mod${count === 1 ? "" : "s"}.`);
+      setConfirmingRemove(null);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTag(null);
+    }
+  }
+
+  async function handleBan() {
+    const tag = newBanTag.trim();
+    if (!tag) return;
+    setBusyTag("__ban__");
+    try {
+      await banTag(tag, newBanReason.trim(), apiKey);
+      setNewBanTag("");
+      setNewBanReason("");
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTag(null);
+    }
+  }
+
+  async function handleUnban(tag: string) {
+    setBusyTag(tag);
+    try {
+      await unbanTag(tag, apiKey);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTag(null);
+    }
+  }
+
+  // Quick-ban from an existing row — no reason prompt, matching how a plain
+  // "Ban" click works elsewhere; use the form above instead if a reason
+  // should be recorded.
+  async function handleQuickBan(tag: string) {
+    setBusyTag(tag);
+    try {
+      await banTag(tag, "", apiKey);
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyTag(null);
+    }
+  }
+
+  if (loading) return <p><span className="spinner" /> Loading tags…</p>;
+
+  return (
+    <div>
+      <p className="hint">
+        Banning a tag blocks it from new uploads/edits — like the banned-IPs list on Site Controls, it doesn't touch
+        mods that already use it. Use Remove for that.
+      </p>
+      <div className="field__row">
+        <input type="text" placeholder="Tag to ban" value={newBanTag} onChange={(e) => setNewBanTag(e.target.value)} />
+        <input
+          type="text"
+          placeholder="Reason (optional)"
+          value={newBanReason}
+          onChange={(e) => setNewBanReason(e.target.value)}
+        />
+        <button className="button button--danger" disabled={!newBanTag.trim() || busyTag === "__ban__"} onClick={handleBan}>
+          {busyTag === "__ban__" && <span className="spinner" />} Ban tag
+        </button>
+      </div>
+
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Tag</th>
+            <th>Mods</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {tags.map((t) => {
+            const busy = busyTag === t.tag;
+            return (
+              <tr key={t.tag}>
+                <td>
+                  {renamingTag === t.tag ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleRename(t.tag)}
+                    />
+                  ) : (
+                    t.tag
+                  )}
+                </td>
+                <td className="muted">{t.count}</td>
+                <td>
+                  {t.isBanned && (
+                    <span className="admin-badge admin-badge--banned" title={t.banReason ?? undefined}>
+                      Banned
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <div className="field__row">
+                    {renamingTag === t.tag ? (
+                      <>
+                        <button className="button" disabled={busy} onClick={() => handleRename(t.tag)}>
+                          Save
+                        </button>
+                        <button className="button" onClick={() => setRenamingTag(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setRenamingTag(t.tag);
+                          setRenameValue(t.tag);
+                        }}
+                      >
+                        Rename
+                      </button>
+                    )}
+                    {t.count > 0 &&
+                      (confirmingRemove === t.tag ? (
+                        <>
+                          <button className="button button--danger" disabled={busy} onClick={() => handleRemove(t.tag)}>
+                            Confirm
+                          </button>
+                          <button className="button" onClick={() => setConfirmingRemove(null)}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button className="button button--danger" disabled={busy} onClick={() => setConfirmingRemove(t.tag)}>
+                          Remove
+                        </button>
+                      ))}
+                    {t.isBanned ? (
+                      <button className="button" disabled={busy} onClick={() => handleUnban(t.tag)}>
+                        Unban
+                      </button>
+                    ) : (
+                      <button className="button" disabled={busy} onClick={() => handleQuickBan(t.tag)}>
+                        Ban
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -252,6 +252,10 @@ surface via the API, ever.
 | `DELETE /api/admin/users/:id` | Hard delete. Refuses on your own id, and refuses (409) while the account still owns mods — same guard as the self-service `DELETE /api/auth/me`, so an admin has to delete those mods first (via the bypass above) rather than silently cascading them away. |
 | `GET /api/admin/reports?status=open\|resolved\|dismissed\|all` | Reads the `reports` table (see "Ideas" in `TODO.md` — this replaces the old `reports:list` npm script as the normal way to check it, though that script still works). |
 | `POST /api/admin/reports/:id/resolve` / `/dismiss` | Updates a report's status. |
+| `GET /api/admin/taxonomy/themes` / `GET .../tags` | Usage counts for every distinct `theme`/tag currently in use — both are free-form (`validateTheme`/`validateTags` in `routes/mods.ts`), so nothing stops the set from growing unmoderated. |
+| `POST /api/admin/taxonomy/themes/rename` / `/delete` | Rename is a plain `UPDATE mods SET theme = ? WHERE theme = ?` — renaming to an already-used theme merges the two for free. Delete resets affected mods to `"Uncategorized"` (the column is `NOT NULL`) rather than leaving it empty. |
+| `POST /api/admin/taxonomy/tags/rename` / `/remove` | Same idea for one tag across every mod's `tags` JSON array — done in JS (`loadModTags` pulls `id, tags` for every mod and parses in memory) rather than SQL JSON functions, since nothing else in this codebase uses those either. |
+| `POST /api/admin/taxonomy/tags/ban` / `/unban` | Blocks a tag from future uploads/edits via a `banned_tags` table, checked by `findBannedTag()` in `routes/mods.ts` — same "block future use, don't touch what exists" model as `banned_ips`/`ipBan.ts`. Use `/remove` to actually strip it from existing mods. |
 
 **Ban, not delete, is the default moderation action against accounts** —
 reversible, doesn't touch the account's mods/comments, and takes effect

@@ -26,9 +26,11 @@ export const mods = new Hono<{ Bindings: Env }>();
 // limit is 2 GB, far beyond anything this project needs.
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_SCREENSHOTS = 10;
-const MAX_TAGS = 15;
-const MAX_TAG_LENGTH = 30;
-const MAX_THEME_LENGTH = 40;
+// Exported for routes/admin.ts's taxonomy tools, which validate against the
+// same limits when renaming a theme or tag.
+export const MAX_TAGS = 15;
+export const MAX_TAG_LENGTH = 30;
+export const MAX_THEME_LENGTH = 40;
 const MAX_SUB_AUTHOR_LENGTH = 60;
 const MAX_COMMENT_BODY_LENGTH = 2000;
 const MAX_AUTHOR_NAME_LENGTH = 40;
@@ -170,6 +172,19 @@ function validateTheme(input: unknown): string | null {
   const trimmed = input.trim();
   if (!trimmed || trimmed.length > MAX_THEME_LENGTH) return null;
   return trimmed;
+}
+
+// Rejects any tag currently in banned_tags (routes/admin.ts § Category/tag
+// taxonomy) — checked at upload/edit time, same "block future use, don't
+// touch what already exists" model ipBan.ts enforces per-request. Returns
+// the first banned tag found (for a specific error message), or null.
+async function findBannedTag(env: Env, tags: string[]): Promise<string | null> {
+  if (tags.length === 0) return null;
+  const placeholders = tags.map(() => "?").join(", ");
+  const row = await env.DB.prepare(`SELECT tag FROM banned_tags WHERE tag IN (${placeholders}) LIMIT 1`)
+    .bind(...tags)
+    .first<{ tag: string }>();
+  return row?.tag ?? null;
 }
 
 // Optional co-creator/secondary-contributor credit — free text, same shape
@@ -388,6 +403,8 @@ mods.patch("/:id", async (c) => {
   if (body.tags !== undefined) {
     const tags = validateTags(body.tags);
     if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);
+    const bannedTag = await findBannedTag(c.env, tags);
+    if (bannedTag) return c.json({ error: `tag "${bannedTag}" is not allowed` }, 400);
     sets.push("tags = ?");
     values.push(JSON.stringify(tags));
   }
@@ -566,6 +583,8 @@ mods.post("/", async (c) => {
 
   const tags = validateTags(metadata.tags);
   if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);
+  const bannedTag = await findBannedTag(c.env, tags);
+  if (bannedTag) return c.json({ error: `tag "${bannedTag}" is not allowed` }, 400);
 
   const theme = validateTheme(metadata.theme);
   if (!theme) return c.json({ error: `theme must be a non-empty string up to ${MAX_THEME_LENGTH} chars` }, 400);

@@ -176,3 +176,14 @@ CREATE TABLE IF NOT EXISTS banned_ips (
     banned_at  TEXT NOT NULL DEFAULT (datetime('now')),
     banned_by  TEXT REFERENCES modders(id) ON DELETE SET NULL
 );
+
+-- Blocks specific tag strings from future upload/edit use — same model as
+-- banned_ips above, but for tags/theme taxonomy (see routes/admin.ts §
+-- Category/tag taxonomy). Existing mods keep a banned tag until an admin
+-- explicitly removes it; banning only blocks new use.
+CREATE TABLE IF NOT EXISTS banned_tags (
+    tag        TEXT PRIMARY KEY,
+    reason     TEXT,
+    banned_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    banned_by  TEXT REFERENCES modders(id) ON DELETE SET NULL
+);

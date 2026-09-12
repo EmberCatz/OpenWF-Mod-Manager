@@ -425,3 +425,49 @@ export async function banIp(ip: string, reason: string, apiKey: string): Promise
 export async function unbanIp(ip: string, apiKey: string): Promise<void> {
   return authedDelete(`/api/admin/banned-ips/${encodeURIComponent(ip)}`, apiKey);
 }
+
+// --- Category/tag taxonomy (routes/admin.ts § Category/tag taxonomy) ---
+
+export interface ThemeUsage {
+  theme: string;
+  count: number;
+}
+
+export interface TagUsage {
+  tag: string;
+  count: number;
+  isBanned: boolean;
+  banReason: string | null;
+}
+
+export async function fetchThemeTaxonomy(apiKey: string): Promise<ThemeUsage[]> {
+  return authedGet("/api/admin/taxonomy/themes", apiKey);
+}
+
+export async function renameTheme(from: string, to: string, apiKey: string): Promise<{ count: number }> {
+  return authedJson("POST", "/api/admin/taxonomy/themes/rename", { from, to }, apiKey);
+}
+
+export async function deleteTheme(theme: string, apiKey: string): Promise<{ count: number }> {
+  return authedJson("POST", "/api/admin/taxonomy/themes/delete", { theme }, apiKey);
+}
+
+export async function fetchTagTaxonomy(apiKey: string): Promise<TagUsage[]> {
+  return authedGet("/api/admin/taxonomy/tags", apiKey);
+}
+
+export async function renameTag(from: string, to: string, apiKey: string): Promise<{ count: number }> {
+  return authedJson("POST", "/api/admin/taxonomy/tags/rename", { from, to }, apiKey);
+}
+
+export async function removeTag(tag: string, apiKey: string): Promise<{ count: number }> {
+  return authedJson("POST", "/api/admin/taxonomy/tags/remove", { tag }, apiKey);
+}
+
+export async function banTag(tag: string, reason: string, apiKey: string): Promise<void> {
+  await authedJson("POST", "/api/admin/taxonomy/tags/ban", { tag, reason }, apiKey);
+}
+
+export async function unbanTag(tag: string, apiKey: string): Promise<void> {
+  await authedJson("POST", "/api/admin/taxonomy/tags/unban", { tag }, apiKey);
+}

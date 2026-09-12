@@ -6,12 +6,19 @@ import { verifyPassword } from "../passwords";
 import { logModerationAction } from "../moderation";
 import { getSiteSettings, setSetting, SETTING_KEY_TO_FIELD, type SettingKey } from "../appSettings";
 import { checkEdgeRateLimit, checkRateLimit, clientIp } from "../rateLimit";
+import { MAX_TAG_LENGTH, MAX_THEME_LENGTH } from "./mods";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
 const MAX_USERS_LISTED = 500;
 const MAX_REPORTS_LISTED = 200;
 const MAX_BANNED_IPS_LISTED = 500;
+// Hobby-project scale — every mod's tags column gets pulled into memory to
+// aggregate usage counts (no JSON1 SQL functions used elsewhere in this
+// codebase, so this stays consistent with how rowToMod etc. already parse
+// tags in JS). Revisit with real pagination if the mod count ever gets
+// anywhere near this.
+const MAX_TAXONOMY_MODS_SCANNED = 5000;
 
 // Every route in this file needs the same "logged in AND is_admin" check —
 // unlike the mod-delete owner-check in routes/mods.ts (which differs
@@ -364,5 +371,210 @@ admin.delete("/banned-ips/:ip", async (c) => {
   if (!result) return c.json({ error: "not found" }, 404);
 
   await logModerationAction(c.env, modder.id, "unban_ip", "ip", ip);
+  return c.body(null, 204);
+});
+
+// --- Category/tag taxonomy ---
+// theme and tags are both free-form (see validateTheme/validateTags in
+// routes/mods.ts) — anyone can introduce a new one just by using it, with
+// no moderation at write time. These routes clean that up after the fact:
+// rename/merge/delete a theme across every mod using it, and edit/remove/
+// ban individual tags — "ban" blocking future use the same way banned_ips
+// does, without touching mods that already have it.
+
+// GET /api/admin/taxonomy/themes — every distinct theme in use, with a
+// per-theme mod count.
+admin.get("/taxonomy/themes", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const { results } = await c.env.DB.prepare("SELECT theme, COUNT(*) as count FROM mods GROUP BY theme ORDER BY count DESC").all<{
+    theme: string;
+    count: number;
+  }>();
+
+  return c.json(results.map((r) => ({ theme: r.theme, count: r.count })));
+});
+
+// POST /api/admin/taxonomy/themes/rename — { from, to }. A plain
+// UPDATE ... WHERE theme = ?, so renaming to an already-existing theme
+// merges the two for free.
+admin.post("/taxonomy/themes/rename", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const body = await c.req.json<{ from?: string; to?: string }>().catch(() => null);
+  const from = body?.from?.trim();
+  const to = body?.to?.trim();
+  if (!from || !to) return c.json({ error: "from and to are required" }, 400);
+  if (to.length > MAX_THEME_LENGTH) return c.json({ error: `theme must be up to ${MAX_THEME_LENGTH} chars` }, 400);
+  if (from === to) return c.json({ error: "from and to are the same" }, 400);
+
+  const result = await c.env.DB.prepare("UPDATE mods SET theme = ?, updated_at = datetime('now') WHERE theme = ?").bind(to, from).run();
+  const count = result.meta.changes ?? 0;
+  await logModerationAction(c.env, modder.id, "rename_theme", "theme", from, `${to} (${count} mods)`);
+
+  return c.json({ count });
+});
+
+// POST /api/admin/taxonomy/themes/delete — { theme }. Resets every mod
+// using it back to the "Uncategorized" default rather than leaving an
+// invalid/empty theme column (NOT NULL, see schema.sql).
+admin.post("/taxonomy/themes/delete", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const body = await c.req.json<{ theme?: string }>().catch(() => null);
+  const theme = body?.theme?.trim();
+  if (!theme) return c.json({ error: "theme is required" }, 400);
+  if (theme === "Uncategorized") return c.json({ error: "Uncategorized is the fallback — nothing to delete" }, 400);
+
+  const result = await c.env.DB.prepare(
+    "UPDATE mods SET theme = 'Uncategorized', updated_at = datetime('now') WHERE theme = ?"
+  )
+    .bind(theme)
+    .run();
+  const count = result.meta.changes ?? 0;
+  await logModerationAction(c.env, modder.id, "delete_theme", "theme", theme, `${count} mods reset to Uncategorized`);
+
+  return c.json({ count });
+});
+
+// Pulls every mod's id + parsed tags into memory — see
+// MAX_TAXONOMY_MODS_SCANNED above for why this is JS-side, not a SQL
+// aggregate.
+async function loadModTags(env: Env): Promise<{ id: string; tags: string[] }[]> {
+  const { results } = await env.DB.prepare("SELECT id, tags FROM mods LIMIT ?")
+    .bind(MAX_TAXONOMY_MODS_SCANNED)
+    .all<{ id: string; tags: string }>();
+  return results.map((r) => ({ id: r.id, tags: JSON.parse(r.tags || "[]") as string[] }));
+}
+
+// GET /api/admin/taxonomy/tags — every tag currently in use (with a
+// per-tag mod count), unioned with every banned tag even if now unused, so
+// an admin can see and manage both from one list.
+admin.get("/taxonomy/tags", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const mods = await loadModTags(c.env);
+  const counts = new Map<string, number>();
+  for (const { tags } of mods) for (const t of tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+
+  const { results: bannedRows } = await c.env.DB.prepare("SELECT tag, reason FROM banned_tags").all<{
+    tag: string;
+    reason: string | null;
+  }>();
+  const banned = new Map(bannedRows.map((r) => [r.tag, r.reason]));
+
+  const list = [...new Set([...counts.keys(), ...banned.keys()])].map((tag) => ({
+    tag,
+    count: counts.get(tag) ?? 0,
+    isBanned: banned.has(tag),
+    banReason: banned.get(tag) ?? null,
+  }));
+  list.sort((a, b) => b.count - a.count);
+
+  return c.json(list);
+});
+
+// POST /api/admin/taxonomy/tags/rename — { from, to }. Renames `from` to
+// `to` in every mod that has it, deduplicating if a mod already has both
+// (same "no duplicate tags" rule validateTags enforces at write time).
+admin.post("/taxonomy/tags/rename", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const body = await c.req.json<{ from?: string; to?: string }>().catch(() => null);
+  const from = body?.from?.trim();
+  const to = body?.to?.trim();
+  if (!from || !to) return c.json({ error: "from and to are required" }, 400);
+  if (to.length > MAX_TAG_LENGTH) return c.json({ error: `tag must be up to ${MAX_TAG_LENGTH} chars` }, 400);
+  if (from === to) return c.json({ error: "from and to are the same" }, 400);
+
+  const mods = await loadModTags(c.env);
+  const affected = mods.filter((m) => m.tags.includes(from));
+  if (affected.length > 0) {
+    await c.env.DB.batch(
+      affected.map((m) => {
+        const newTags = [...new Set(m.tags.map((t) => (t === from ? to : t)))];
+        return c.env.DB.prepare("UPDATE mods SET tags = ?, updated_at = datetime('now') WHERE id = ?").bind(
+          JSON.stringify(newTags),
+          m.id
+        );
+      })
+    );
+  }
+  await logModerationAction(c.env, modder.id, "rename_tag", "tag", from, `${to} (${affected.length} mods)`);
+
+  return c.json({ count: affected.length });
+});
+
+// POST /api/admin/taxonomy/tags/remove — { tag }. Strips it from every mod
+// that has it without touching anything else about that mod.
+admin.post("/taxonomy/tags/remove", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const body = await c.req.json<{ tag?: string }>().catch(() => null);
+  const tag = body?.tag?.trim();
+  if (!tag) return c.json({ error: "tag is required" }, 400);
+
+  const mods = await loadModTags(c.env);
+  const affected = mods.filter((m) => m.tags.includes(tag));
+  if (affected.length > 0) {
+    await c.env.DB.batch(
+      affected.map((m) => {
+        const newTags = m.tags.filter((t) => t !== tag);
+        return c.env.DB.prepare("UPDATE mods SET tags = ?, updated_at = datetime('now') WHERE id = ?").bind(
+          JSON.stringify(newTags),
+          m.id
+        );
+      })
+    );
+  }
+  await logModerationAction(c.env, modder.id, "remove_tag", "tag", tag, `${affected.length} mods`);
+
+  return c.json({ count: affected.length });
+});
+
+// POST /api/admin/taxonomy/tags/ban — { tag, reason? }. Blocks future use
+// (see findBannedTag in routes/mods.ts) without touching mods that already
+// have it. Upserts, so re-banning an already-banned tag just updates the
+// reason.
+admin.post("/taxonomy/tags/ban", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const body = await c.req.json<{ tag?: string; reason?: string }>().catch(() => null);
+  const tag = body?.tag?.trim();
+  if (!tag) return c.json({ error: "tag is required" }, 400);
+
+  await c.env.DB.prepare(
+    `INSERT INTO banned_tags (tag, reason, banned_at, banned_by) VALUES (?, ?, datetime('now'), ?)
+     ON CONFLICT (tag) DO UPDATE SET reason = excluded.reason, banned_at = excluded.banned_at, banned_by = excluded.banned_by`
+  )
+    .bind(tag, body?.reason?.trim() || null, modder.id)
+    .run();
+  await logModerationAction(c.env, modder.id, "ban_tag", "tag", tag, body?.reason);
+
+  return c.body(null, 204);
+});
+
+// POST /api/admin/taxonomy/tags/unban — { tag }. A tag can contain
+// characters (spaces, slashes) that are awkward as a URL path segment
+// (unlike banned-ips' DELETE /:ip), so unban takes the tag in the body too.
+admin.post("/taxonomy/tags/unban", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const body = await c.req.json<{ tag?: string }>().catch(() => null);
+  const tag = body?.tag?.trim();
+  if (!tag) return c.json({ error: "tag is required" }, 400);
+
+  const result = await c.env.DB.prepare("DELETE FROM banned_tags WHERE tag = ? RETURNING tag").bind(tag).first();
+  if (!result) return c.json({ error: "not found" }, 404);
+
+  await logModerationAction(c.env, modder.id, "unban_tag", "tag", tag);
   return c.body(null, 204);
 });

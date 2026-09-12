@@ -7,6 +7,23 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Admin tool for the Category/tag taxonomy — themes and tags are both
+      free-form (`DEFAULT_MOD_THEMES`/`TagInput`) with no moderation at
+      write time; this is the cleanup pass. New Admin tab "Taxonomy" with
+      Themes (rename/merge — same UPDATE either way — and delete, which
+      resets affected mods to "Uncategorized" rather than leaving the
+      NOT-NULL column empty) and Tags (rename, remove, and ban/unban) sub-
+      panels. New `banned_tags` D1 table blocks a banned tag from future
+      uploads/edits the same way `banned_ips` blocks an IP — checked via
+      `findBannedTag()` in both `POST /api/mods` and `PATCH /api/mods/:id`
+      — without touching mods that already carry it (use Remove for that).
+      Tag aggregation is done in JS over `SELECT id, tags FROM mods`
+      (`routes/admin.ts`'s `loadModTags`) rather than SQL JSON functions,
+      consistent with how the rest of the codebase already treats the
+      `tags` column. Verified directly against the API (rename, merge,
+      delete, ban/unban, remove, and the ban actually rejecting a `PATCH`
+      while an unbanned tag still succeeds) since the Admin panel's own
+      `@tauri-apps/plugin-http` calls aren't cheaply Playwright-shimmable.
 - [x] Automated `gameVersions.ts` regeneration — was a one-off point-in-time
       scrape of about.openwf.io/versions that wouldn't pick up new patches
       until someone manually re-scraped it. New
@@ -183,13 +200,6 @@ testing) rather than letting them evaporate.
 ## Up next
 - [ ] Tauri auto-updater, once builds are actually distributed as installers
       rather than launched in dev mode
-- [ ] Admin tool for the Category/tag taxonomy — mods now carry a
-      free-form `theme` field (Gameplay/Cosmetic/Cheat Tool/...,
-      `DEFAULT_MOD_THEMES` in `packages/shared/src/types.ts`) that expands
-      the same way `tags` already does, with no moderation on either. Needs
-      an Admin-tab view to rename/merge/delete a theme across every mod
-      using it, and to edit/remove/ban individual tags (ban = block future
-      use, like the existing IP-ban pattern in `routes/admin.ts`).
 
 ## Ideas, not committed to yet
 - [ ] Mod Settings tab — let players adjust exposed values in a `.pluto`
