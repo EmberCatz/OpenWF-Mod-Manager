@@ -8,6 +8,23 @@ binding = "DB"
 database_name = "openwf-mod-manager"
 database_id = "a330ba8c-47f6-4872-b906-bd67d833e552"
 
+# --- Edge rate limiting (login/signup burst guard) ---
+# Workers' native Rate Limiting binding — enforced at Cloudflare's network
+# edge, ahead of the D1-backed per-route limiter in rateLimit.ts. Doesn't
+# replace that limiter (its period is capped at 60s, too short to express
+# "8 per 5 minutes" or "5 per hour" directly) — it's a coarse first line of
+# defense so a genuine request flood gets rejected before ever touching D1,
+# rather than a tighter effective per-IP quota. namespace_id is just an
+# arbitrary label Cloudflare uses to key this binding's own counters; it
+# doesn't refer to any resource you create elsewhere.
+[[ratelimits]]
+name = "EDGE_RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60
+
 # --- GitHub Releases (mod zip storage) ---
 # Mods here are small (metadata patches / .pluto scripts, sub-1MB), so
 # GitHub Releases is a better fit than object storage: zero cost, zero

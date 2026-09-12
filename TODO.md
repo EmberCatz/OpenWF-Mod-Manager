@@ -217,12 +217,29 @@ by an application-layer code change alone, or weren't in scope of either pass.
       `wrangler` major bump, not something to do silently as part of this
       pass. Left as-is; worth another look next time `wrangler` gets
       deliberately upgraded.
-- [ ] Consider a custom domain in front of the Worker once one exists, to
-      unlock Cloudflare's zone-level Rate Limiting Rules — the current
-      D1-backed limiter (`rateLimit.ts`) is explicitly single-IP-scoped by
-      design and, per its own comment, "won't hold up against a real
-      distributed attack." Needs the user to actually own/point a domain at
-      the Worker first — nothing to implement here without one.
+- [x] Edge-level rate limiting ahead of the D1-backed limiter — turned out
+      not to need a custom domain at all: Workers has its own native Rate
+      Limiting binding (`[[ratelimits]]` in `wrangler.toml`, stable since
+      wrangler 4.36+), which attaches directly to the Worker like a D1/KV
+      binding and enforces at Cloudflare's network edge. `checkEdgeRateLimit()`
+      (`rateLimit.ts`) checks it before the existing D1 limiter on
+      login, signup, and admin reauth — the three password-guessing-shaped
+      endpoints. Its period is capped at 10 or 60 seconds (a real
+      Cloudflare-side limit), too short to express the existing "8 per 5
+      minutes" / "5 per hour" business rules directly, so this is a coarse
+      60s/20-request pre-filter layered in *front of* those, not a
+      replacement — the real value is that a genuine request flood gets
+      rejected at the edge without ever reaching D1, capping D1 load
+      regardless of how much volume an attacker throws at it. Verified
+      against local wrangler dev: a 25-request burst still gets exactly the
+      same 401→429 behavior as before, server stays healthy throughout.
+      One local-only gotcha worth knowing: the local simulator reproducibly
+      hangs/crashes the dev runtime if `limit` is set very low (tested with
+      2) — did not chase further since it's Cloudflare's own local-sim
+      quirk at an extreme value, not something the shipped 20/60s config
+      hits. The zone-level Rate Limiting *Rules* product (the original
+      custom-domain idea) is still on the table later as a broader WAF
+      layer, but isn't needed just to close this specific gap.
 
 ## Known correctness gaps
 - [ ] `packages/shared/src/gameVersions.ts` is a point-in-time scrape of

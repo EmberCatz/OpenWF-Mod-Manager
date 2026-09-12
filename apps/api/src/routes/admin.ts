@@ -5,7 +5,7 @@ import { authenticate, hashToken, type Modder } from "../auth";
 import { verifyPassword } from "../passwords";
 import { logModerationAction } from "../moderation";
 import { getSiteSettings, setSetting, SETTING_KEY_TO_FIELD, type SettingKey } from "../appSettings";
-import { checkRateLimit, clientIp } from "../rateLimit";
+import { checkEdgeRateLimit, checkRateLimit, clientIp } from "../rateLimit";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -52,7 +52,11 @@ admin.post("/reauth", async (c) => {
   const modder = await requireAdmin(c);
   if (modder instanceof Response) return modder;
 
-  const allowed = await checkRateLimit(c, "login", clientIp(c), 8, 5 * 60);
+  const ip = clientIp(c);
+  if (!(await checkEdgeRateLimit(c, "login", ip))) {
+    return c.json({ error: "too many attempts — wait a few minutes and try again" }, 429);
+  }
+  const allowed = await checkRateLimit(c, "login", ip, 8, 5 * 60);
   if (!allowed) return c.json({ error: "too many attempts — wait a few minutes and try again" }, 429);
 
   const body = await c.req.json<{ password?: string }>().catch(() => null);

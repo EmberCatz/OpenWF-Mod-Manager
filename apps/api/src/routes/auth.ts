@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { authenticate, hashToken } from "../auth";
 import { hashPassword, verifyPassword } from "../passwords";
-import { checkRateLimit, clientIp } from "../rateLimit";
+import { checkEdgeRateLimit, checkRateLimit, clientIp } from "../rateLimit";
 import { getSetting } from "../appSettings";
 import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
 
@@ -48,7 +48,11 @@ auth.post("/signup", async (c) => {
     return c.json({ error: "signups_disabled", message: "New account signups are temporarily disabled." }, 423);
   }
 
-  const allowed = await checkRateLimit(c, "signup", clientIp(c), SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS);
+  const ip = clientIp(c);
+  if (!(await checkEdgeRateLimit(c, "signup", ip))) {
+    return c.json({ error: "too many accounts created from this connection — try again later" }, 429);
+  }
+  const allowed = await checkRateLimit(c, "signup", ip, SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many accounts created from this connection — try again later" }, 429);
 
   const body = await c.req.json<{ username?: string; password?: string }>().catch(() => null);
@@ -77,7 +81,11 @@ auth.post("/signup", async (c) => {
 
 // POST /api/auth/login — { username, password }.
 auth.post("/login", async (c) => {
-  const allowed = await checkRateLimit(c, "login", clientIp(c), LOGIN_LIMIT, LOGIN_WINDOW_SECONDS);
+  const ip = clientIp(c);
+  if (!(await checkEdgeRateLimit(c, "login", ip))) {
+    return c.json({ error: "too many login attempts — wait a few minutes and try again" }, 429);
+  }
+  const allowed = await checkRateLimit(c, "login", ip, LOGIN_LIMIT, LOGIN_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many login attempts — wait a few minutes and try again" }, 429);
 
   const body = await c.req.json<{ username?: string; password?: string }>().catch(() => null);

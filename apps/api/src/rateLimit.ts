@@ -16,6 +16,19 @@ export function clientIp(c: Context<{ Bindings: Env }>): string {
   return c.req.header("CF-Connecting-IP") ?? "unknown";
 }
 
+// Edge-level burst guard, checked before the D1-backed limiter below on
+// login/signup — see wrangler.toml's [[ratelimits]] block. This runs on
+// Cloudflare's network at the edge (no D1 round-trip), so it's cheap enough
+// to survive a genuine request flood that would otherwise hammer D1 before
+// checkRateLimit() even got a chance to reject it. Its 60s-max period can't
+// express the business-rule windows those buckets already enforce (8 per 5
+// minutes, 5 per hour), so this stays a coarse pre-filter layered in front
+// of them, not a replacement.
+export async function checkEdgeRateLimit(c: Context<{ Bindings: Env }>, bucket: string, key: string): Promise<boolean> {
+  const { success } = await c.env.EDGE_RATE_LIMITER.limit({ key: `${bucket}:${key}` });
+  return success;
+}
+
 // Returns true if the call is allowed (and records it), false if `key` has
 // already hit `limit` attempts for `bucket` within the last `windowSeconds`.
 export async function checkRateLimit(
