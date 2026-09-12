@@ -7,6 +7,32 @@ land, and add new ones as they come up (in conversation, in Discord, while
 testing) rather than letting them evaporate.
 
 ## Recently shipped
+- [x] Author reply badge on comments — turned out to need no backend work
+      at all: `comments.author_account_id` (added for the comment-
+      impersonation fix) was already a real, verified link set only when
+      the poster was actually logged in, and the API already returned it.
+      `CommentSection`/`CommentNode` just needed a `modOwnerId` prop
+      (passed down from `ModDetail`'s already-in-scope `mod.ownerId`) to
+      compare against, rendering a gold "Author" badge plus a left-border
+      accent (`.comment--author`) when they match. Verified live against
+      local wrangler dev with a seeded comment.
+- [x] Author analytics — a new weekly downloads/ratings trend view per mod,
+      reachable via an "Analytics" toggle in My Mods (`AuthorAnalyticsPanel.tsx`).
+      `mods.download_count` was a running total only (no per-event history)
+      and `POST /:id/download` never inserted a row, so a new
+      `mod_download_daily` table (upserted once per download, bounded to
+      one row per mod per day rather than one per download forever) backs
+      the downloads side; `reviews.created_at` already supported the
+      ratings side with no schema change. `GET /api/mods/:id/analytics`
+      (owner or admin only) buckets both into trailing 12 fixed 7-day
+      windows. Two single-hue bar charts (downloads in the app's existing
+      "download" blue, rating in its accent gold — reusing established
+      app colors rather than a new palette), each with a hover tooltip
+      per bar, a direct label on the standout week, and a "show as a
+      table" fallback for exact numbers — built following the dataviz
+      skill's procedure (form choice, mark specs, hover layer, table
+      view). Verified with real seeded multi-week data through both the
+      raw API (bucket math checked by hand) and the live rendered chart.
 - [x] Installed Mods tab (`views/InstalledMods.tsx`) — every installed mod
       in one place, cross-referencing `installed.ts`'s local state against
       one `fetchModList()` call to flag which ones have a newer version on
@@ -164,14 +190,6 @@ testing) rather than letting them evaporate.
       starts to matter once there are enough overlapping cosmetic mods for
       the same slot that silent overwrite-on-install becomes a real
       support headache.
-- [ ] Author analytics — `download_count` and `reviews` already track
-      totals; there's no trend-over-time view (downloads/ratings by week)
-      for someone who's uploaded a mod, which is the more useful shape of
-      that same data for an author deciding whether an update helped.
-- [ ] Author reply / pinned comment on a mod — a small extension of the
-      existing threaded comments + voting (`CommentSection.tsx`), not a
-      new subsystem: let the mod's owner post a reply that's visually
-      distinguished, for responding to a bug report in-thread.
 - [ ] Snapshot/restore of the Warframe install folders before an install —
       today's uninstall only removes exactly what *that mod's* install
       wrote (by design), so there's no generic "put my install back to how

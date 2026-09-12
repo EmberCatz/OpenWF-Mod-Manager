@@ -275,7 +275,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
             </div>
           </div>
 
-          <CommentSection modId={mod.id} />
+          <CommentSection modId={mod.id} modOwnerId={mod.ownerId} />
         </>
       )}
     </div>

@@ -429,8 +429,84 @@ mods.post("/:id/download", async (c) => {
   if (!allowed) return c.body(null, 204);
 
   const modId = c.req.param("id");
-  await c.env.DB.prepare("UPDATE mods SET download_count = download_count + 1 WHERE id = ?").bind(modId).run();
+  const today = new Date().toISOString().slice(0, 10);
+  // Same one-request batch as the rate limiter's own insert+count — see
+  // rateLimit.ts for why D1's .batch() is used instead of two separate
+  // awaits here (not a correctness issue in this case, just one round trip
+  // instead of two for a route that already fires on every install).
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE mods SET download_count = download_count + 1 WHERE id = ?").bind(modId),
+    c.env.DB.prepare(
+      `INSERT INTO mod_download_daily (mod_id, day, count) VALUES (?, ?, 1)
+       ON CONFLICT (mod_id, day) DO UPDATE SET count = count + 1`
+    ).bind(modId, today),
+  ]);
   return c.body(null, 204);
+});
+
+// GET /api/mods/:id/analytics — owner or admin only. Weekly-bucketed
+// downloads (mod_download_daily) and ratings (reviews.created_at) for the
+// trailing ANALYTICS_WEEKS weeks, so an author can see whether an update
+// actually moved the needle instead of only ever seeing running totals
+// (mods.download_count, reviewCount/averageRating elsewhere in this file).
+// Buckets count back from right now in fixed 7-day windows, not calendar
+// weeks — the most recent bucket is always "the last 7 days," regardless
+// of what day of the week it happens to be.
+const ANALYTICS_WEEKS = 12;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+mods.get("/:id/analytics", async (c) => {
+  const modder = await authenticate(c);
+  if (!modder) return c.json({ error: "unauthorized" }, 401);
+
+  const modId = c.req.param("id");
+  const modRow = await c.env.DB.prepare("SELECT owner_id FROM mods WHERE id = ?").bind(modId).first<{ owner_id: string }>();
+  if (!modRow) return c.json({ error: "not found" }, 404);
+  if (modRow.owner_id !== modder.id && !modder.isAdmin) {
+    return c.json({ error: "forbidden — not the owner of this mod" }, 403);
+  }
+
+  const rangeStart = new Date(Date.now() - ANALYTICS_WEEKS * 7 * MS_PER_DAY);
+
+  const [downloadResult, reviewResult] = await c.env.DB.batch([
+    c.env.DB.prepare("SELECT day, count FROM mod_download_daily WHERE mod_id = ? AND day >= ?").bind(
+      modId,
+      rangeStart.toISOString().slice(0, 10)
+    ),
+    c.env.DB.prepare("SELECT created_at, rating FROM reviews WHERE mod_id = ? AND created_at >= ?").bind(
+      modId,
+      rangeStart.toISOString()
+    ),
+  ]);
+  const downloadRows = downloadResult.results as { day: string; count: number }[];
+  const reviewRows = reviewResult.results as { created_at: string; rating: number }[];
+
+  const weeks = [];
+  const now = Date.now();
+  for (let i = ANALYTICS_WEEKS - 1; i >= 0; i--) {
+    const weekEnd = now - i * 7 * MS_PER_DAY;
+    const weekStart = weekEnd - 7 * MS_PER_DAY;
+
+    const downloads = downloadRows
+      .filter((r) => new Date(r.day).getTime() >= weekStart && new Date(r.day).getTime() < weekEnd)
+      .reduce((sum, r) => sum + r.count, 0);
+
+    const weekReviews = reviewRows.filter((r) => {
+      const t = new Date(r.created_at).getTime();
+      return t >= weekStart && t < weekEnd;
+    });
+    const averageRating =
+      weekReviews.length > 0 ? weekReviews.reduce((sum, r) => sum + r.rating, 0) / weekReviews.length : null;
+
+    weeks.push({
+      weekStart: new Date(weekStart).toISOString().slice(0, 10),
+      downloads,
+      reviewCount: weekReviews.length,
+      averageRating,
+    });
+  }
+
+  return c.json({ weeks });
 });
 
 // POST /api/mods — create a new mod + its first version.

@@ -2,6 +2,7 @@ import { z, type ZodType } from "zod";
 import type {
   Comment,
   Mod,
+  ModAnalytics,
   ModderProfile,
   ModWithVersions,
   ReviewSummary,
@@ -63,6 +64,17 @@ export async function fetchMyMods(apiKey: string): Promise<ModWithVersions[]> {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   if (!res.ok) throw new Error(`failed to load your mods: ${res.status}`);
+  return res.json();
+}
+
+// Weekly-bucketed downloads/ratings for a mod you own (or, for an admin,
+// any mod) — see routes/mods.ts's GET .../analytics for the owner-or-admin
+// check and bucketing rules.
+export async function fetchModAnalytics(modId: string, apiKey: string): Promise<ModAnalytics> {
+  const res = await fetch(`${API_BASE_URL}/api/mods/${modId}/analytics`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`failed to load analytics: ${res.status}`);
   return res.json();
 }
 

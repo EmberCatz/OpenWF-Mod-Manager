@@ -782,6 +782,61 @@ body {
   margin-top: 1rem;
 }
 
+/* --- Author analytics (weekly bar charts) --- */
+
+.analytics-panel__title {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.analytics-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 90px;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-chart__col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.analytics-chart__bar {
+  width: 100%;
+  max-width: 24px;
+  border-radius: 4px 4px 0 0;
+}
+
+.analytics-chart__value {
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.analytics-chart__empty {
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-panel__table-toggle {
+  margin-top: 0.75rem;
+}
+
+.analytics-panel__table {
+  margin-top: 0.5rem;
+}
+
 .installed-mods__banner {
   display: flex;
   align-items: center;
@@ -1308,6 +1363,19 @@ body {
   background: var(--panel);
   border-radius: 8px;
   padding: 0.65rem 0.9rem;
+}
+
+/* A verified reply from the mod's own owner — border-left rather than a
+   full background tint, so it reads as "flagged" without fighting the
+   comment body's own readability. */
+.comment--author {
+  border-left: 3px solid var(--accent);
+}
+
+.badge--author {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .comment__meta {

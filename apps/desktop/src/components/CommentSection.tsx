@@ -42,6 +42,7 @@ interface CommentNodeProps {
   isAdmin: boolean;
   deletingId: number | null;
   onAdminDelete: (commentId: number) => void;
+  modOwnerId: string | null;
 }
 
 // A single comment plus its replies, recursively — hoisted to module scope
@@ -61,17 +62,23 @@ function CommentNode({
   isAdmin,
   deletingId,
   onAdminDelete,
+  modOwnerId,
 }: CommentNodeProps) {
   const [replyName, setReplyName] = useState(getCommenterName());
   const [replyBody, setReplyBody] = useState("");
   const isReplying = replyingToId === comment.id;
   const kids = childrenByParent.get(comment.id) ?? [];
+  // authorAccountId is only ever set when the poster was actually logged in
+  // at post time (see routes/mods.ts), so this is a real verified match
+  // against the mod's owner — not a name-based guess.
+  const isAuthorReply = !!comment.authorAccountId && comment.authorAccountId === modOwnerId;
 
   return (
-    <li className="comment fade-in" style={{ marginLeft: depth * 1.5 + "rem" }}>
+    <li className={`comment fade-in ${isAuthorReply ? "comment--author" : ""}`} style={{ marginLeft: depth * 1.5 + "rem" }}>
       <div className="comment__meta">
         <VoteControl score={comment.score} myVote={comment.myVote} onVote={(v) => onVote(comment.id, v)} />
         <AuthorLink name={comment.authorName} accountId={comment.authorAccountId} className="comment__author" />
+        {isAuthorReply && <span className="badge badge--author">Author</span>}
         <span className="muted">{new Date(comment.createdAt).toLocaleString()}</span>
       </div>
       <p className="comment__body">{comment.body}</p>
@@ -127,6 +134,7 @@ function CommentNode({
               isAdmin={isAdmin}
               deletingId={deletingId}
               onAdminDelete={onAdminDelete}
+              modOwnerId={modOwnerId}
             />
           ))}
         </ul>
@@ -137,11 +145,13 @@ function CommentNode({
 
 // Comments still don't require an account to post (see docs/architecture.md)
 // — authorName is whatever the commenter typed, not a verified identity.
-// authorAccountId is a best-effort match the server resolves by name, used
-// only to make the name a profile link when one happens to exist (see
-// AuthorLink.tsx). Voting reuses the same anonymous per-install reviewerId
-// star ratings already use — one vote per install, not per account.
-export default function CommentSection({ modId }: { modId: string }) {
+// authorAccountId is only set when the poster was actually logged in at
+// post time (routes/mods.ts), used both to make the name a profile link
+// when one exists (see AuthorLink.tsx) and to flag a reply as coming from
+// the mod's own owner (modOwnerId, below). Voting reuses the same
+// anonymous per-install reviewerId star ratings already use — one vote per
+// install, not per account.
+export default function CommentSection({ modId, modOwnerId }: { modId: string; modOwnerId: string | null }) {
   const { account } = useAccount();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -310,6 +320,7 @@ export default function CommentSection({ modId }: { modId: string }) {
               isAdmin={!!account?.isAdmin}
               deletingId={deletingId}
               onAdminDelete={handleAdminDelete}
+              modOwnerId={modOwnerId}
             />
           ))}
         </ul>

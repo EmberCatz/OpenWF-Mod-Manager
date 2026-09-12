@@ -5,6 +5,7 @@ import { useApiKey } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
 import EditModForm from "../components/EditModForm";
+import AuthorAnalyticsPanel from "../components/AuthorAnalyticsPanel";
 
 // "Mine" resolves through whatever's in Settings — a self-service account
 // session or an older API key, both work the same way here (see
@@ -17,6 +18,7 @@ export default function MyMods() {
   const [confirmingModId, setConfirmingModId] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editingModId, setEditingModId] = useState<string | null>(null);
+  const [analyticsModId, setAnalyticsModId] = useState<string | null>(null);
 
   function load() {
     if (!apiKey) {
@@ -103,6 +105,9 @@ export default function MyMods() {
               <button className="button" onClick={() => setEditingModId(mod.id)}>
                 Edit
               </button>
+              <button className="button" onClick={() => setAnalyticsModId(analyticsModId === mod.id ? null : mod.id)}>
+                {analyticsModId === mod.id ? "Hide analytics" : "Analytics"}
+              </button>
               {confirmingModId === mod.id ? (
                 <>
                   <span className="error">Delete '{mod.name}' and every version? This can't be undone.</span>
@@ -118,6 +123,8 @@ export default function MyMods() {
               )}
             </div>
           )}
+
+          {analyticsModId === mod.id && <AuthorAnalyticsPanel modId={mod.id} apiKey={apiKey} />}
         </li>
       ))}
     </ul>

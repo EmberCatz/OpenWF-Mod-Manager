@@ -66,6 +66,20 @@ export interface ModWithVersions extends Mod {
   versions: ModVersion[];
 }
 
+// GET /api/mods/:id/analytics response — owner/admin only, see
+// apps/api/src/routes/mods.ts. Fixed 7-day windows counting back from now,
+// not calendar weeks, oldest first.
+export interface ModAnalyticsWeek {
+  weekStart: string; // YYYY-MM-DD, the start of this 7-day window
+  downloads: number;
+  reviewCount: number; // reviews submitted during this window, not a running total
+  averageRating: number | null; // null when reviewCount is 0
+}
+
+export interface ModAnalytics {
+  weeks: ModAnalyticsWeek[];
+}
+
 // Request body for POST /api/mods and POST /api/mods/:id/versions.
 // The zip itself travels as multipart form data alongside this JSON blob
 // (field name "metadata"); see apps/api/src/routes/mods.ts.
