@@ -342,7 +342,11 @@ export default function Settings() {
               <span>SpaceNinjaServer WebUI port</span>
               <span className="hint">
                 Powers the Server WebUI sub-tab under Live Settings — only relevant if you run a local
-                SpaceNinjaServer private server. Defaults to 80; use 443 if yours runs over HTTPS.
+                SpaceNinjaServer private server. Defaults to 80; use 443 if yours runs over HTTPS (see{" "}
+                <a href="https://about.openwf.io/hardening-security" target="_blank" rel="noreferrer">
+                  hardening your server with TLS
+                </a>
+                ) — any other HTTPS port isn't detected and will fail to load here.
               </span>
               <input
                 type="text"
