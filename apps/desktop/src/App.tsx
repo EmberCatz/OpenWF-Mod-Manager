@@ -78,7 +78,7 @@ export default function App() {
               <button className="app-account__name" onClick={goToAccountSettings}>
                 {account.username}
               </button>
-              <Avatar name={account.username} avatarKey={account.avatarKey} size={24} />
+              <Avatar name={account.username} avatarKey={account.avatarKey} githubUrl={account.githubUrl} size={24} />
               <button className="app-account__logout" onClick={handleHeaderLogout}>
                 Log out
               </button>

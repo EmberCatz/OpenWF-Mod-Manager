@@ -2317,6 +2317,7 @@ body {
   font-family: "Rajdhani", sans-serif;
   flex-shrink: 0;
   line-height: 1;
+  object-fit: cover; /* only affects the <img> case (a linked GitHub avatar) */
 }
 
 .avatar-picker {

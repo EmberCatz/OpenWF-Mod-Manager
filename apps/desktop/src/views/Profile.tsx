@@ -40,7 +40,7 @@ export default function Profile({ accountId }: { accountId: string }) {
       {profile && (
         <>
           <div className="profile__header">
-            <Avatar name={profile.name} avatarKey={profile.avatarKey} size={64} />
+            <Avatar name={profile.name} avatarKey={profile.avatarKey} githubUrl={profile.githubUrl} size={64} />
             <div>
               <h2 className="profile__name">{profile.name}</h2>
               <span className="muted">

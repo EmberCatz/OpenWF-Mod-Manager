@@ -459,6 +459,12 @@ export default function Settings() {
                   Logged in as <strong>{account.username}</strong>
                 </p>
                 <span className="hint">Profile picture</span>
+                <div className="field__row" style={{ marginBottom: "0.5rem" }}>
+                  <Avatar name={account.username} avatarKey={account.avatarKey} githubUrl={account.githubUrl} size={40} />
+                  {account.githubUrl && (
+                    <span className="muted">Using your GitHub profile picture — clear the link below to switch back to a color.</span>
+                  )}
+                </div>
                 <div className="avatar-picker">
                   {AVATAR_KEYS.map((key) => (
                     <button
@@ -471,7 +477,7 @@ export default function Settings() {
                     </button>
                   ))}
                 </div>
-                <span className="hint">GitHub link (optional, shown on your profile)</span>
+                <span className="hint">GitHub link (optional, shown on your profile — also used as your profile picture when set)</span>
                 <div className="field__row">
                   <input
                     type="text"
