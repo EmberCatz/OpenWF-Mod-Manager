@@ -373,10 +373,12 @@ mods.patch("/:id", async (c) => {
 
   if (body.name !== undefined) {
     if (!body.name.trim()) return c.json({ error: "name cannot be empty" }, 400);
+    if (containsLink(body.name)) return c.json({ error: "links aren't allowed in the mod name" }, 400);
     sets.push("name = ?");
     values.push(body.name.trim());
   }
   if (body.description !== undefined) {
+    if (containsLink(body.description)) return c.json({ error: "links aren't allowed in the description" }, 400);
     sets.push("description = ?");
     values.push(body.description);
   }
@@ -399,13 +401,14 @@ mods.patch("/:id", async (c) => {
   }
   if (body.screenshotUrls !== undefined) {
     const urls = validateScreenshotUrls(body.screenshotUrls);
-    if (!urls) return c.json({ error: `screenshotUrls must be an array of http(s) URLs, max ${MAX_SCREENSHOTS}` }, 400);
+    if (!urls) return c.json({ error: `screenshotUrls must be an array of imgur.com URLs, max ${MAX_SCREENSHOTS}` }, 400);
     sets.push("screenshot_urls = ?");
     values.push(JSON.stringify(urls));
   }
   if (body.tags !== undefined) {
     const tags = validateTags(body.tags);
     if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);
+    if (tags.some(containsLink)) return c.json({ error: "links aren't allowed in tags" }, 400);
     const bannedTag = await findBannedTag(c.env, tags);
     if (bannedTag) return c.json({ error: `tag "${bannedTag}" is not allowed` }, 400);
     sets.push("tags = ?");
@@ -414,12 +417,16 @@ mods.patch("/:id", async (c) => {
   if (body.theme !== undefined) {
     const theme = validateTheme(body.theme);
     if (!theme) return c.json({ error: `theme must be a non-empty string up to ${MAX_THEME_LENGTH} chars` }, 400);
+    if (containsLink(theme)) return c.json({ error: "links aren't allowed in the category/theme" }, 400);
     sets.push("theme = ?");
     values.push(theme);
   }
   if (body.subAuthor !== undefined) {
     const subAuthorResult = validateSubAuthor(body.subAuthor);
     if (!subAuthorResult.ok) return c.json({ error: `subAuthor must be a string up to ${MAX_SUB_AUTHOR_LENGTH} chars` }, 400);
+    if (subAuthorResult.value && containsLink(subAuthorResult.value)) {
+      return c.json({ error: "links aren't allowed in sub-author" }, 400);
+    }
     sets.push("sub_author = ?");
     values.push(subAuthorResult.value);
   }
@@ -594,6 +601,16 @@ mods.post("/", async (c) => {
 
   const subAuthorResult = validateSubAuthor(metadata.subAuthor);
   if (!subAuthorResult.ok) return c.json({ error: `subAuthor must be a string up to ${MAX_SUB_AUTHOR_LENGTH} chars` }, 400);
+
+  if (containsLink(metadata.name)) return c.json({ error: "links aren't allowed in the mod name" }, 400);
+  if (metadata.description && containsLink(metadata.description)) {
+    return c.json({ error: "links aren't allowed in the description" }, 400);
+  }
+  if (subAuthorResult.value && containsLink(subAuthorResult.value)) {
+    return c.json({ error: "links aren't allowed in sub-author" }, 400);
+  }
+  if (containsLink(theme)) return c.json({ error: "links aren't allowed in the category/theme" }, 400);
+  if (tags.some(containsLink)) return c.json({ error: "links aren't allowed in tags" }, 400);
 
   const modId = slugify(metadata.name);
   if (!modId) return c.json({ error: "name produced an empty slug" }, 400);
