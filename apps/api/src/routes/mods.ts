@@ -32,6 +32,7 @@ export const MAX_TAGS = 15;
 export const MAX_TAG_LENGTH = 30;
 export const MAX_THEME_LENGTH = 40;
 const MAX_SUB_AUTHOR_LENGTH = 60;
+const MAX_INSTALL_INSTRUCTIONS_LENGTH = 2000;
 const MAX_COMMENT_BODY_LENGTH = 2000;
 const MAX_AUTHOR_NAME_LENGTH = 40;
 const MAX_COMMENTS_LISTED = 200;
@@ -203,6 +204,18 @@ function validateSubAuthor(input: unknown): { ok: true; value: string | null } |
   return { ok: true, value: trimmed || null };
 }
 
+// Optional, mod-specific install steps — free text, same shape as
+// validateSubAuthor: undefined leaves it untouched (PATCH) or unset (POST);
+// null/"" explicitly clears it.
+function validateInstallInstructions(input: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (input === undefined) return { ok: true, value: null };
+  if (input === null) return { ok: true, value: null };
+  if (typeof input !== "string") return { ok: false };
+  const trimmed = input.trim();
+  if (trimmed.length > MAX_INSTALL_INSTRUCTIONS_LENGTH) return { ok: false };
+  return { ok: true, value: trimmed || null };
+}
+
 export function rowToVersion(row: any): ModVersion {
   return {
     id: row.id,
@@ -240,6 +253,7 @@ export function rowToMod(row: any): Mod {
     subAuthor: row.sub_author ?? null,
     ownerId: row.owner_id,
     description: row.description,
+    installInstructions: row.install_instructions ?? null,
     category: row.category,
     theme: row.theme ?? "Uncategorized",
     thumbnailUrl: row.thumbnail_url ?? null,
@@ -381,6 +395,15 @@ mods.patch("/:id", async (c) => {
     if (containsLink(body.description)) return c.json({ error: "links aren't allowed in the description" }, 400);
     sets.push("description = ?");
     values.push(body.description);
+  }
+  if (body.installInstructions !== undefined) {
+    const result = validateInstallInstructions(body.installInstructions);
+    if (!result.ok) return c.json({ error: `installInstructions must be a string up to ${MAX_INSTALL_INSTRUCTIONS_LENGTH} chars` }, 400);
+    if (result.value && containsLink(result.value)) {
+      return c.json({ error: "links aren't allowed in install instructions" }, 400);
+    }
+    sets.push("install_instructions = ?");
+    values.push(result.value);
   }
   if (body.thumbnailUrl !== undefined) {
     if (body.thumbnailUrl === null || body.thumbnailUrl === "") {
@@ -602,12 +625,20 @@ mods.post("/", async (c) => {
   const subAuthorResult = validateSubAuthor(metadata.subAuthor);
   if (!subAuthorResult.ok) return c.json({ error: `subAuthor must be a string up to ${MAX_SUB_AUTHOR_LENGTH} chars` }, 400);
 
+  const installInstructionsResult = validateInstallInstructions(metadata.installInstructions);
+  if (!installInstructionsResult.ok) {
+    return c.json({ error: `installInstructions must be a string up to ${MAX_INSTALL_INSTRUCTIONS_LENGTH} chars` }, 400);
+  }
+
   if (containsLink(metadata.name)) return c.json({ error: "links aren't allowed in the mod name" }, 400);
   if (metadata.description && containsLink(metadata.description)) {
     return c.json({ error: "links aren't allowed in the description" }, 400);
   }
   if (subAuthorResult.value && containsLink(subAuthorResult.value)) {
     return c.json({ error: "links aren't allowed in sub-author" }, 400);
+  }
+  if (installInstructionsResult.value && containsLink(installInstructionsResult.value)) {
+    return c.json({ error: "links aren't allowed in install instructions" }, 400);
   }
   if (containsLink(theme)) return c.json({ error: "links aren't allowed in the category/theme" }, 400);
   if (tags.some(containsLink)) return c.json({ error: "links aren't allowed in tags" }, 400);
@@ -631,8 +662,8 @@ mods.post("/", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, sub_author, description, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mods (id, name, author, sub_author, description, install_instructions, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         modId,
         metadata.name,
@@ -641,6 +672,7 @@ mods.post("/", async (c) => {
         modder.name,
         subAuthorResult.value,
         metadata.description ?? "",
+        installInstructionsResult.value,
         metadata.category,
         theme,
         metadata.thumbnailUrl ?? null,

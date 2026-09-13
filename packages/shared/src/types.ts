@@ -35,6 +35,7 @@ export interface Mod {
   subAuthor: string | null; // optional co-creator/secondary contributor credit, free text
   ownerId: string; // the uploading account's modder id — see routes/modders.ts's public profile lookup
   description: string;
+  installInstructions: string | null; // optional, mod-specific install steps, separate from description
   category: ModCategory;
   theme: string; // thematic category, e.g. "Gameplay" — see DEFAULT_MOD_THEMES
   thumbnailUrl: string | null; // external link only — never hosted by this project, see docs/architecture.md
@@ -90,6 +91,7 @@ export interface UploadMetadata {
   author: string;
   subAuthor?: string; // see Mod.subAuthor
   description: string;
+  installInstructions?: string; // see Mod.installInstructions
   category: ModCategory;
   theme?: string; // see Mod.theme — defaults to "Uncategorized" server-side if omitted
   version: string;
@@ -108,6 +110,7 @@ export interface UploadMetadata {
 export interface UpdateModMetadata {
   name?: string;
   description?: string;
+  installInstructions?: string | null;
   thumbnailUrl?: string | null;
   thumbnailPosition?: string;
   screenshotUrls?: string[];

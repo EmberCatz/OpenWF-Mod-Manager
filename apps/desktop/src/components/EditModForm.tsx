@@ -22,6 +22,7 @@ interface EditModFormProps {
 export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModFormProps) {
   const [name, setName] = useState(mod.name);
   const [description, setDescription] = useState(mod.description);
+  const [installInstructions, setInstallInstructions] = useState(mod.installInstructions ?? "");
   const [thumbnailUrl, setThumbnailUrl] = useState(mod.thumbnailUrl ?? "");
   const [thumbnailPosition, setThumbnailPosition] = useState(mod.thumbnailPosition);
   const [screenshotUrlsText, setScreenshotUrlsText] = useState(mod.screenshotUrls.join("\n"));
@@ -51,6 +52,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
         {
           name: name.trim(),
           description,
+          installInstructions: installInstructions.trim() || null,
           thumbnailUrl: thumbnailUrl.trim() || null,
           thumbnailPosition: thumbnailUrl.trim() ? thumbnailPosition : undefined,
           screenshotUrls: previewScreenshotUrls,
@@ -76,6 +78,11 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
       <label className="field">
         <span>Description</span>
         <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Install Instructions</span>
+        <span className="hint">Steps specific to this mod, separate from the general description.</span>
+        <textarea rows={3} value={installInstructions} onChange={(e) => setInstallInstructions(e.target.value)} />
       </label>
       <label className="field">
         <span>Thumbnail URL</span>

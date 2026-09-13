@@ -901,6 +901,23 @@ body {
   margin: 0.75rem 0;
 }
 
+.mod-detail__install-instructions {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.mod-detail__install-instructions h4 {
+  margin: 0 0 0.35rem;
+}
+
+.mod-detail__install-instructions p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .mod-detail__screenshot {
   max-width: 220px;
   max-height: 160px;

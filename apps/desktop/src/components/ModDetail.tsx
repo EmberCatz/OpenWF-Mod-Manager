@@ -243,6 +243,13 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
               )}
               <p className="mod-detail__description">{mod.description}</p>
 
+              {mod.installInstructions && (
+                <div className="mod-detail__install-instructions">
+                  <h4>Installation Notes</h4>
+                  <p>{mod.installInstructions}</p>
+                </div>
+              )}
+
               {mod.screenshotUrls.length > 0 && (
                 <div className="mod-detail__screenshots">
                   {mod.screenshotUrls.map((url) => (

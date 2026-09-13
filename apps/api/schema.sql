@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS mods (
     author          TEXT NOT NULL,          -- always the owning account's own name, set server-side — see routes/mods.ts's POST /
     sub_author      TEXT,                   -- optional free-text co-creator/secondary-contributor credit
     description     TEXT NOT NULL DEFAULT '',
+    install_instructions TEXT,             -- optional, mod-specific install steps, separate from description
     category        TEXT NOT NULL CHECK (category IN ('metadata-patch', 'pluto-script', 'other')),
     theme           TEXT NOT NULL DEFAULT 'Uncategorized', -- thematic category (Gameplay, Cosmetic, ...), not a fixed enum — see DEFAULT_MOD_THEMES
     thumbnail_url      TEXT,                     -- external link only, never hosted here — see docs/architecture.md

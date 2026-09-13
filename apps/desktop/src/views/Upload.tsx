@@ -22,6 +22,7 @@ const initialNewModForm = {
   name: "",
   subAuthor: "",
   description: "",
+  installInstructions: "",
   category: "metadata-patch" as ModCategory,
   theme: "",
   version: "1.0.0",
@@ -115,6 +116,7 @@ export default function Upload() {
             author: account?.username ?? "",
             subAuthor: newModForm.subAuthor || undefined,
             description: newModForm.description,
+            installInstructions: newModForm.installInstructions || undefined,
             category: newModForm.category,
             theme: newModForm.theme,
             version: newModForm.version,
@@ -191,6 +193,15 @@ export default function Upload() {
               <label className="field">
                 <span>Description</span>
                 <textarea value={newModForm.description} onChange={(e) => setNewModForm({ ...newModForm, description: e.target.value })} rows={3} />
+              </label>
+              <label className="field">
+                <span>Install Instructions (optional)</span>
+                <span className="hint">Steps specific to this mod, separate from the general client-setup guide.</span>
+                <textarea
+                  value={newModForm.installInstructions}
+                  onChange={(e) => setNewModForm({ ...newModForm, installInstructions: e.target.value })}
+                  rows={3}
+                />
               </label>
               <label className="field">
                 <span>Type</span>
