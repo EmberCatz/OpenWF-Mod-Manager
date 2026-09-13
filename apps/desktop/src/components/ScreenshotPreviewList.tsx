@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
+import { isImgurUrl } from "../imgur";
 
 function ScreenshotThumb({ url }: { url: string }) {
-  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ok" | "error" | "not-imgur">("loading");
 
   useEffect(() => {
+    if (!isImgurUrl(url)) {
+      setStatus("not-imgur");
+      return;
+    }
     setStatus("loading");
     const img = new Image();
     img.onload = () => setStatus("ok");
@@ -20,6 +25,7 @@ function ScreenshotThumb({ url }: { url: string }) {
       {status === "ok" && <img className="screenshot-preview__img" src={url} alt="" />}
       {status === "loading" && <div className="screenshot-preview__placeholder"><span className="spinner" /></div>}
       {status === "error" && <div className="screenshot-preview__placeholder screenshot-preview__placeholder--error">Broken link</div>}
+      {status === "not-imgur" && <div className="screenshot-preview__placeholder screenshot-preview__placeholder--error">Imgur only</div>}
     </div>
   );
 }

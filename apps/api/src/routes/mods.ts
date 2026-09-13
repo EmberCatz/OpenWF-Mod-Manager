@@ -105,12 +105,15 @@ async function looksLikeValidUpload(file: File, extension: string): Promise<bool
 
 // Thumbnails/screenshots are external links only — this project never
 // stores or serves the image bytes itself (see docs/architecture.md,
-// "Images: external links only"). This just guards against non-http(s)
-// schemes ending up in an <img src> in the desktop app.
-function isHttpUrl(value: string): boolean {
+// "Images: external links only") — restricted to Imgur (imgur.com and its
+// i./m. subdomains) specifically, since a bare http(s) check lets any host
+// through and an arbitrary host is otherwise an unaudited hotlink/tracking
+// surface.
+function isImgurUrl(value: string): boolean {
   try {
     const u = new URL(value);
-    return u.protocol === "http:" || u.protocol === "https:";
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    return u.hostname === "imgur.com" || u.hostname.endsWith(".imgur.com");
   } catch {
     return false;
   }
@@ -147,7 +150,7 @@ function validateGameVersions(input: unknown): string[] | null {
 function validateScreenshotUrls(input: unknown): string[] | null {
   if (input === undefined) return [];
   if (!Array.isArray(input) || input.length > MAX_SCREENSHOTS) return null;
-  if (input.every((v) => typeof v === "string" && isHttpUrl(v))) return input;
+  if (input.every((v) => typeof v === "string" && isImgurUrl(v))) return input;
   return null;
 }
 
@@ -381,11 +384,11 @@ mods.patch("/:id", async (c) => {
     if (body.thumbnailUrl === null || body.thumbnailUrl === "") {
       sets.push("thumbnail_url = ?");
       values.push(null);
-    } else if (isHttpUrl(body.thumbnailUrl)) {
+    } else if (isImgurUrl(body.thumbnailUrl)) {
       sets.push("thumbnail_url = ?");
       values.push(body.thumbnailUrl);
     } else {
-      return c.json({ error: "thumbnailUrl must be an http(s) URL" }, 400);
+      return c.json({ error: "thumbnailUrl must be an imgur.com URL" }, 400);
     }
   }
   if (body.thumbnailPosition !== undefined) {
@@ -571,15 +574,15 @@ mods.post("/", async (c) => {
   const gameVersions = validateGameVersions(metadata.gameVersions);
   if (!gameVersions) return c.json({ error: "gameVersions must be a non-empty array of known versions, or omitted" }, 400);
 
-  if (metadata.thumbnailUrl !== undefined && !isHttpUrl(metadata.thumbnailUrl)) {
-    return c.json({ error: "thumbnailUrl must be an http(s) URL" }, 400);
+  if (metadata.thumbnailUrl !== undefined && !isImgurUrl(metadata.thumbnailUrl)) {
+    return c.json({ error: "thumbnailUrl must be an imgur.com URL" }, 400);
   }
   const thumbnailPosition = validateThumbnailPosition(metadata.thumbnailPosition);
   if (thumbnailPosition === null) {
     return c.json({ error: "thumbnailPosition must look like 'NN% NN%'" }, 400);
   }
   const screenshotUrls = validateScreenshotUrls(metadata.screenshotUrls);
-  if (!screenshotUrls) return c.json({ error: `screenshotUrls must be an array of http(s) URLs, max ${MAX_SCREENSHOTS}` }, 400);
+  if (!screenshotUrls) return c.json({ error: `screenshotUrls must be an array of imgur.com URLs, max ${MAX_SCREENSHOTS}` }, 400);
 
   const tags = validateTags(metadata.tags);
   if (!tags) return c.json({ error: `tags must be an array of non-empty strings, max ${MAX_TAGS}, each up to ${MAX_TAG_LENGTH} chars` }, 400);

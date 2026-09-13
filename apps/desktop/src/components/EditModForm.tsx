@@ -79,6 +79,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
       </label>
       <label className="field">
         <span>Thumbnail URL</span>
+        <span className="hint">A link already hosted on imgur.com.</span>
         <input type="text" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} placeholder="https://..." />
         <ThumbnailPreview url={thumbnailUrl} position={thumbnailPosition} onPositionChange={setThumbnailPosition} />
       </label>

@@ -214,7 +214,7 @@ export default function Upload() {
               <h4 className="upload-card__title">Media</h4>
               <label className="field">
                 <span>Thumbnail URL (optional)</span>
-                <span className="hint">A link to an image already hosted elsewhere (Discord, Imgur, etc.) — not uploaded through this app.</span>
+                <span className="hint">A link to an image already hosted on imgur.com — not uploaded through this app.</span>
                 <input type="text" value={newModForm.thumbnailUrl} onChange={(e) => setNewModForm({ ...newModForm, thumbnailUrl: e.target.value })} placeholder="https://..." />
                 <ThumbnailPreview
                   url={newModForm.thumbnailUrl}

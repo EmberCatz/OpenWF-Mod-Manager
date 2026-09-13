@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isImgurUrl } from "../imgur";
 
 interface ThumbnailPreviewProps {
   url: string;
@@ -14,13 +15,17 @@ interface ThumbnailPreviewProps {
 // (object-position) so the uploader can still control what's visible
 // inside the fixed frame.
 export default function ThumbnailPreview({ url, position, onPositionChange }: ThumbnailPreviewProps) {
-  const [status, setStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "ok" | "error" | "not-imgur">("idle");
   const frameRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
   useEffect(() => {
     if (!url.trim()) {
       setStatus("idle");
+      return;
+    }
+    if (!isImgurUrl(url)) {
+      setStatus("not-imgur");
       return;
     }
     setStatus("loading");
@@ -75,12 +80,14 @@ export default function ThumbnailPreview({ url, position, onPositionChange }: Th
           <div className="thumbnail-preview__placeholder">
             {status === "loading" && <span><span className="spinner" /> Checking…</span>}
             {status === "error" && <span>Couldn't load this image</span>}
+            {status === "not-imgur" && <span>Only imgur.com links are allowed</span>}
           </div>
         )}
       </div>
       <p className="hint">
         {status === "ok" && "This is exactly how it'll appear in Browse. Drag inside the frame to reposition it."}
         {status === "error" && "Double-check the link is a direct image URL (ends in .png/.jpg/etc.) and is publicly reachable."}
+        {status === "not-imgur" && "Thumbnails must be hosted on imgur.com."}
         {status === "loading" && " "}
       </p>
     </div>
