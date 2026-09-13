@@ -27,6 +27,75 @@ export function useConflictConfirm() {
   return { requestConfirm, modal };
 }
 
+// Same shape as useConflictConfirm above, but for modActions.ts's
+// DeclaredConflictError — an author-stated "don't install alongside X," not
+// a proven file collision, so the framing (and the list of names, not
+// paths) is different enough to warrant its own small modal rather than
+// overloading ConflictModal's props.
+export function useDeclaredConflictConfirm() {
+  const [pending, setPending] = useState<{
+    conflictModNames: string[];
+    resolve: (proceed: boolean) => void;
+  } | null>(null);
+
+  function requestConfirm(conflictModNames: string[]): Promise<boolean> {
+    return new Promise((resolve) => setPending({ conflictModNames, resolve }));
+  }
+
+  function handleDecision(proceed: boolean) {
+    pending?.resolve(proceed);
+    setPending(null);
+  }
+
+  const modal = pending ? (
+    <DeclaredConflictModal
+      conflictModNames={pending.conflictModNames}
+      onCancel={() => handleDecision(false)}
+      onConfirm={() => handleDecision(true)}
+    />
+  ) : null;
+
+  return { requestConfirm, modal };
+}
+
+function DeclaredConflictModal({
+  conflictModNames,
+  onCancel,
+  onConfirm,
+}: {
+  conflictModNames: string[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal-box modal-box--small">
+        <div className="modal-header">This mod's author flagged a conflict</div>
+        <p className="hint">
+          This mod is declared to conflict with {conflictModNames.length === 1 ? "a mod" : "mods"} you already have
+          installed:
+        </p>
+        <ul className="conflict-dialog__list">
+          {conflictModNames.map((name) => (
+            <li key={name}>
+              <strong>{name}</strong>
+            </li>
+          ))}
+        </ul>
+        <p className="hint">This is the author's own stated intent, not a detected file collision.</p>
+        <div className="field__row">
+          <button className="button button--danger" onClick={onConfirm}>
+            Install anyway
+          </button>
+          <button className="button" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConflictModal({
   conflicts,
   onCancel,

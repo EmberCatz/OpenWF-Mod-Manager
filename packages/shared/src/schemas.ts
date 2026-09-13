@@ -42,6 +42,8 @@ export const ModSchema = z.object({
   thumbnailPosition: z.string(),
   screenshotUrls: z.array(z.string()),
   tags: z.array(z.string()),
+  requiresModIds: z.array(z.string()),
+  conflictsWithModIds: z.array(z.string()),
   downloadCount: z.number(),
   commentCount: z.number(),
   likeCount: z.number(),

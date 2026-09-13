@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Mod, ModWithVersions } from "@openwf-mod-manager/shared";
 import { DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
-import { updateMod } from "../api";
+import { fetchModList, updateMod } from "../api";
 import { toast } from "../toast";
 import ThumbnailPreview from "./ThumbnailPreview";
 import ScreenshotPreviewList from "./ScreenshotPreviewList";
 import TagInput from "./TagInput";
+import ModPicker from "./ModPicker";
 
 interface EditModFormProps {
   mod: ModWithVersions;
@@ -30,7 +31,14 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
   const [tags, setTags] = useState(mod.tags);
   const [theme, setTheme] = useState(mod.theme);
   const [subAuthor, setSubAuthor] = useState(mod.subAuthor ?? "");
+  const [requiresModIds, setRequiresModIds] = useState(mod.requiresModIds);
+  const [conflictsWithModIds, setConflictsWithModIds] = useState(mod.conflictsWithModIds);
+  const [modOptions, setModOptions] = useState<ModWithVersions[]>([]);
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "error" }>({ kind: "idle" });
+
+  useEffect(() => {
+    fetchModList().then(setModOptions);
+  }, []);
 
   const previewScreenshotUrls = screenshotUrlsText
     .split("\n")
@@ -61,6 +69,8 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
           tags,
           theme: theme.trim(),
           subAuthor: subAuthor.trim() || null,
+          requiresModIds,
+          conflictsWithModIds,
         },
         apiKey
       );
@@ -120,6 +130,16 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
       <label className="field">
         <span>Tags</span>
         <TagInput tags={tags} onChange={setTags} />
+      </label>
+      <label className="field">
+        <span>Requires</span>
+        <span className="hint">Other mods this one works best with — informational only, not enforced at install.</span>
+        <ModPicker selectedIds={requiresModIds} onChange={setRequiresModIds} options={modOptions} excludeId={mod.id} />
+      </label>
+      <label className="field">
+        <span>Conflicts with</span>
+        <span className="hint">Other mods this one shouldn't be installed alongside.</span>
+        <ModPicker selectedIds={conflictsWithModIds} onChange={setConflictsWithModIds} options={modOptions} excludeId={mod.id} />
       </label>
       <div className="field__row">
         <button className="button button--primary" disabled={status.kind === "working"} onClick={save}>

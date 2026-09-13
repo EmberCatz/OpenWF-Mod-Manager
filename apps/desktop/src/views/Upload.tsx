@@ -7,6 +7,7 @@ import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
 import { toast } from "../toast";
 import TagInput from "../components/TagInput";
+import ModPicker from "../components/ModPicker";
 import ThumbnailPreview from "../components/ThumbnailPreview";
 import ScreenshotPreviewList from "../components/ScreenshotPreviewList";
 import GameVersionPicker from "../components/GameVersionPicker";
@@ -32,6 +33,8 @@ const initialNewModForm = {
   thumbnailPosition: "50% 50%",
   screenshotUrls: "",
   tags: [] as string[],
+  requiresModIds: [] as string[],
+  conflictsWithModIds: [] as string[],
 };
 
 export default function Upload() {
@@ -128,6 +131,8 @@ export default function Upload() {
             thumbnailPosition: newModForm.thumbnailUrl ? newModForm.thumbnailPosition : undefined,
             screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
             tags: newModForm.tags,
+            requiresModIds: newModForm.requiresModIds.length > 0 ? newModForm.requiresModIds : undefined,
+            conflictsWithModIds: newModForm.conflictsWithModIds.length > 0 ? newModForm.conflictsWithModIds : undefined,
           },
           bytes,
           fileName,
@@ -290,6 +295,24 @@ export default function Upload() {
               <label className="field">
                 <span>Compatible game versions</span>
                 <GameVersionPicker selected={gameVersions} onChange={setGameVersions} />
+              </label>
+              <label className="field">
+                <span>Requires (optional)</span>
+                <span className="hint">Other mods this one works best with — informational only, not enforced at install.</span>
+                <ModPicker
+                  selectedIds={newModForm.requiresModIds}
+                  onChange={(requiresModIds) => setNewModForm({ ...newModForm, requiresModIds })}
+                  options={existingMods}
+                />
+              </label>
+              <label className="field">
+                <span>Conflicts with (optional)</span>
+                <span className="hint">Other mods this one shouldn't be installed alongside.</span>
+                <ModPicker
+                  selectedIds={newModForm.conflictsWithModIds}
+                  onChange={(conflictsWithModIds) => setNewModForm({ ...newModForm, conflictsWithModIds })}
+                  options={existingMods}
+                />
               </label>
             </div>
           </>

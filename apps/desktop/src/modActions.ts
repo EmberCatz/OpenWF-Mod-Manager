@@ -1,5 +1,5 @@
 import type { Mod, ModVersion } from "@openwf-mod-manager/shared";
-import { downloadModFile, recordDownload } from "./api";
+import { downloadModFile, fetchModList, recordDownload } from "./api";
 import {
   computeInstallFilePath,
   installModFile,
@@ -34,6 +34,32 @@ export class ModConflictError extends Error {
 interface Conflict {
   entry: InstalledEntry;
   paths: string[];
+}
+
+// Thrown when the mod being installed declares (via Mod.conflictsWithModIds
+// — author-stated intent, see Upload.tsx's ModPicker) a conflict with a
+// mod that's currently installed. Distinct from ModConflictError above,
+// which fires on an actual detected file-path collision — this is just
+// what the author *says*, so it's a softer warning: still skippable via
+// `force`, same retry shape (see components/ConflictConfirmDialog.tsx's
+// useDeclaredConflictConfirm).
+export class DeclaredConflictError extends Error {
+  conflictModNames: string[];
+
+  constructor(conflictModNames: string[]) {
+    super(`Declared conflict with: ${conflictModNames.join(", ")}`);
+    this.name = "DeclaredConflictError";
+    this.conflictModNames = conflictModNames;
+  }
+}
+
+// Only fetches the full mod list (for name lookups) when actually needed —
+// most mods declare no requires/conflicts at all, so this stays off the
+// hot path for the common case.
+async function resolveModNames(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const all = await fetchModList();
+  return new Map(all.filter((m) => ids.includes(m.id)).map((m) => [m.id, m.name]));
 }
 
 function findConflicts(excludeModId: string, paths: string[]): Conflict[] {
@@ -94,6 +120,15 @@ export async function installVersion(mod: Mod, version: ModVersion, options?: { 
   const targetFolder = targetFolderFor(mod.category);
   if (!targetFolder) throw new Error("Set the matching folder in Settings first");
 
+  if (!options?.force && mod.conflictsWithModIds.length > 0) {
+    const installedIds = new Set(listInstalled().map((e) => e.modId));
+    const conflictingIds = mod.conflictsWithModIds.filter((id) => installedIds.has(id));
+    if (conflictingIds.length > 0) {
+      const names = await resolveModNames(conflictingIds);
+      throw new DeclaredConflictError(conflictingIds.map((id) => names.get(id) ?? id));
+    }
+  }
+
   const isZip = version.fileName.toLowerCase().endsWith(".zip");
   const bytes = await downloadModFile(version.downloadUrl);
 
@@ -126,7 +161,17 @@ export async function installVersion(mod: Mod, version: ModVersion, options?: { 
   // bookkeeping now that the overwrite has actually happened.
   if (conflicts.length > 0) reconcileOverwrittenMods(conflicts);
 
-  return `Installed ${installedFiles.length} file(s)`;
+  let requiresNote = "";
+  if (mod.requiresModIds.length > 0) {
+    const installedIds = new Set(listInstalled().map((e) => e.modId));
+    const missingIds = mod.requiresModIds.filter((id) => !installedIds.has(id));
+    if (missingIds.length > 0) {
+      const names = await resolveModNames(missingIds);
+      requiresNote = ` (recommended with: ${missingIds.map((id) => names.get(id) ?? id).join(", ")})`;
+    }
+  }
+
+  return `Installed ${installedFiles.length} file(s)${requiresNote}`;
 }
 
 // Plain save-to-location download, no install bookkeeping — for "other"

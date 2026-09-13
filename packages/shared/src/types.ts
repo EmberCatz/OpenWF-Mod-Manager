@@ -43,6 +43,8 @@ export interface Mod {
   thumbnailPosition: string; // CSS object-position, e.g. "50% 50%" — lets the uploader pick a focal point since the linked image can't actually be cropped/re-hosted
   screenshotUrls: string[]; // external links only, same reasoning
   tags: string[]; // free-form, user-defined (Notion-style) — unlike gameVersions, not validated against a fixed list
+  requiresModIds: string[]; // other mods.id this one is declared to work best with — author-stated, not enforced at install
+  conflictsWithModIds: string[]; // other mods.id this one is declared to conflict with — author-stated, distinct from install-time file-path collision *detection*
   downloadCount: number; // incremented via POST /api/mods/:id/download — best-effort, not a precise audit trail
   commentCount: number; // COUNT(*) from comments, computed server-side on every read
   likeCount: number; // COUNT(*) from mod_likes, computed server-side on every read
@@ -103,6 +105,8 @@ export interface UploadMetadata {
   thumbnailPosition?: string; // see Mod.thumbnailPosition — defaults to "50% 50%" server-side
   screenshotUrls?: string[]; // external links only — see Mod.screenshotUrls
   tags?: string[]; // free-form — see Mod.tags
+  requiresModIds?: string[]; // see Mod.requiresModIds
+  conflictsWithModIds?: string[]; // see Mod.conflictsWithModIds
 }
 
 // PATCH /api/mods/:id — partial update of a mod's own record (not its
@@ -120,6 +124,8 @@ export interface UpdateModMetadata {
   tags?: string[];
   theme?: string;
   subAuthor?: string | null;
+  requiresModIds?: string[];
+  conflictsWithModIds?: string[];
 }
 
 export interface ApiError {

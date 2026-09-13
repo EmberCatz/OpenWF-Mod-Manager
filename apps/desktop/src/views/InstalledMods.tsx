@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import type { ModVersion, ModWithVersions } from "@openwf-mod-manager/shared";
 import { fetchModList } from "../api";
-import { installVersion, ModConflictError, uninstallMod } from "../modActions";
+import { DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { getIgnoredOrphans, ignoreOrphan, listInstalled, setInstalled, type InstalledEntry } from "../installed";
 import { getMetadataPatchesPath, getScriptsPath } from "../settings";
 import { scanInstallFolder, uninstallFiles } from "../native";
 import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
-import { useConflictConfirm } from "../components/ConflictConfirmDialog";
+import { useConflictConfirm, useDeclaredConflictConfirm } from "../components/ConflictConfirmDialog";
 
 type ActionState = { status: "idle" | "working" };
 
@@ -47,6 +47,7 @@ export default function InstalledMods() {
   const [orphanState, setOrphanState] = useState<OrphanState>("idle");
   const [orphanBusy, setOrphanBusy] = useState<string | null>(null);
   const { requestConfirm, modal: conflictModal } = useConflictConfirm();
+  const { requestConfirm: requestDeclaredConfirm, modal: declaredConflictModal } = useDeclaredConflictConfirm();
 
   function load() {
     setError(null);
@@ -85,6 +86,14 @@ export default function InstalledMods() {
     } catch (e) {
       if (e instanceof ModConflictError) {
         if (await requestConfirm(e.conflicts)) {
+          try {
+            await performUpdate(row, version, true);
+          } catch (e2) {
+            toast.error(String(e2));
+          }
+        }
+      } else if (e instanceof DeclaredConflictError) {
+        if (await requestDeclaredConfirm(e.conflictModNames)) {
           try {
             await performUpdate(row, version, true);
           } catch (e2) {
@@ -240,6 +249,7 @@ export default function InstalledMods() {
   return (
     <div className="fade-in">
       {conflictModal}
+      {declaredConflictModal}
       {rows.length === 0 && <p className="muted">Nothing installed yet — head to Browse to find something.</p>}
 
       {outdatedCount > 0 && (

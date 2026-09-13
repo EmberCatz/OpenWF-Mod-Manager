@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS mods (
     thumbnail_position TEXT NOT NULL DEFAULT '50% 50%', -- CSS object-position focal point, since the linked image can't be re-hosted/cropped
     screenshot_urls TEXT NOT NULL DEFAULT '[]', -- JSON array of external links, same reasoning
     tags            TEXT NOT NULL DEFAULT '[]', -- JSON array of free-form, user-defined tags (not validated against a fixed list)
+    requires_mod_ids       TEXT NOT NULL DEFAULT '[]', -- JSON array of other mods.id — author-declared "works best with", not enforced at install
+    conflicts_with_mod_ids TEXT NOT NULL DEFAULT '[]', -- JSON array of other mods.id — author-declared, distinct from the client-side file-path collision *detection*
     download_count  INTEGER NOT NULL DEFAULT 0, -- incremented via POST /api/mods/:id/download — best-effort, not a precise audit trail
     owner_id        TEXT NOT NULL REFERENCES modders(id),
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),

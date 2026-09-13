@@ -1,13 +1,13 @@
 import { useState, type CSSProperties } from "react";
 import { ALL_VERSIONS_TAG, type ModVersion, type ModWithVersions } from "@openwf-mod-manager/shared";
 import { toggleLike } from "../api";
-import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
+import { canAutoInstall, downloadVersion, DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
 import { getReviewerId } from "../reviewerId";
 import { isLiked, setLiked } from "../likedMods";
 import { toast } from "../toast";
 import { CheckCircleIcon, CommentIcon, DownloadIcon, RefreshIcon, TrashIcon } from "../icons";
-import { useConflictConfirm } from "./ConflictConfirmDialog";
+import { useConflictConfirm, useDeclaredConflictConfirm } from "./ConflictConfirmDialog";
 import SplitButton from "./SplitButton";
 import LikeButton from "./LikeButton";
 import ClampedText from "./ClampedText";
@@ -72,6 +72,7 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
   // getInstalled() read below picks up this card's own install/uninstall.
   const [, setInstalledTick] = useState(0);
   const { requestConfirm, modal: conflictModal } = useConflictConfirm();
+  const { requestConfirm: requestDeclaredConfirm, modal: declaredConflictModal } = useDeclaredConflictConfirm();
 
   const version = mod.versions[0];
   const autoInstallable = canAutoInstall(mod.category);
@@ -94,6 +95,14 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
     } catch (e) {
       if (e instanceof ModConflictError) {
         if (await requestConfirm(e.conflicts)) {
+          try {
+            await performInstall(version, true);
+          } catch (e2) {
+            toast.error(String(e2));
+          }
+        }
+      } else if (e instanceof DeclaredConflictError) {
+        if (await requestDeclaredConfirm(e.conflictModNames)) {
           try {
             await performInstall(version, true);
           } catch (e2) {
@@ -153,6 +162,7 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
     return (
       <li className="mod-card mod-card--grid fade-in" style={style}>
         {conflictModal}
+        {declaredConflictModal}
         <div className="mod-card__thumb-wrap">
           <img
             className="mod-card__thumb"
@@ -231,6 +241,7 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
   return (
     <li className="mod-card fade-in" style={style}>
       {conflictModal}
+      {declaredConflictModal}
       <div className="mod-card__body">
         {hasThumb && (
           <img

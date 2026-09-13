@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { ModWithVersions, ModVersion, LikeSummary } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
 import { deleteMod, downloadModFile, fetchMod, fetchLikeSummary, toggleLike } from "../api";
-import { canAutoInstall, downloadVersion, installVersion, ModConflictError, uninstallMod } from "../modActions";
-import { useConflictConfirm } from "./ConflictConfirmDialog";
+import { canAutoInstall, downloadVersion, DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
+import { useConflictConfirm, useDeclaredConflictConfirm } from "./ConflictConfirmDialog";
 import { getInstalled } from "../installed";
 import { listZipTextEntries, type ZipTextEntry } from "../native";
 import { getReviewerId } from "../reviewerId";
@@ -52,6 +52,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionState>({ status: "idle" });
   const { requestConfirm, modal: conflictModal } = useConflictConfirm();
+  const { requestConfirm: requestDeclaredConfirm, modal: declaredConflictModal } = useDeclaredConflictConfirm();
   const [installedVersion, setInstalledVersionState] = useState<string | null>(null);
   const [adminConfirming, setAdminConfirming] = useState(false);
   const [adminBusy, setAdminBusy] = useState(false);
@@ -145,6 +146,14 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
             toast.error(String(e2));
           }
         }
+      } else if (e instanceof DeclaredConflictError) {
+        if (await requestDeclaredConfirm(e.conflictModNames)) {
+          try {
+            await performInstall(version, true);
+          } catch (e2) {
+            toast.error(String(e2));
+          }
+        }
       } else {
         toast.error(String(e));
       }
@@ -200,6 +209,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   return (
     <div className="mod-detail fade-in">
       {conflictModal}
+      {declaredConflictModal}
       <button className="button" onClick={onBack}>← Back</button>
 
       {loading && <p><span className="spinner" /> Loading…</p>}

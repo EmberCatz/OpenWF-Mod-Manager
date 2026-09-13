@@ -34,6 +34,7 @@ export const MAX_THEME_LENGTH = 40;
 const MAX_SUB_AUTHOR_LENGTH = 60;
 const MAX_INSTALL_INSTRUCTIONS_LENGTH = 2000;
 const MAX_RISK_NOTES_LENGTH = 2000;
+const MAX_RELATED_MODS = 10;
 const MAX_COMMENT_BODY_LENGTH = 2000;
 const MAX_AUTHOR_NAME_LENGTH = 40;
 const MAX_COMMENTS_LISTED = 200;
@@ -217,6 +218,29 @@ function validateInstallInstructions(input: unknown): { ok: true; value: string 
   return { ok: true, value: trimmed || null };
 }
 
+// Author-declared "requires"/"conflicts with" other mods (TODO.md § Ideas)
+// — just shape/dedup/cap here, same as validateTags; whether each id
+// actually refers to a real mod is checked separately (async), by
+// findMissingModId below.
+function validateModIdArray(input: unknown): string[] | null {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > MAX_RELATED_MODS) return null;
+  if (!input.every((v) => typeof v === "string" && v.length > 0)) return null;
+  return [...new Set(input)];
+}
+
+// Returns the first id in `ids` that isn't an existing mod, or null if
+// they all are — same "find the one bad value" shape as findBannedTag.
+async function findMissingModId(env: Env, ids: string[]): Promise<string | null> {
+  if (ids.length === 0) return null;
+  const placeholders = ids.map(() => "?").join(", ");
+  const { results } = await env.DB.prepare(`SELECT id FROM mods WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .all<{ id: string }>();
+  const found = new Set(results.map((r) => r.id));
+  return ids.find((id) => !found.has(id)) ?? null;
+}
+
 // Optional author-authored warning block — same shape as
 // validateInstallInstructions. Purely author-declared, no admin/moderation
 // involvement (see TODO.md § Ideas — "Mod risk/warning banner").
@@ -274,6 +298,8 @@ export function rowToMod(row: any): Mod {
     thumbnailPosition: row.thumbnail_position ?? "50% 50%",
     screenshotUrls: JSON.parse(row.screenshot_urls ?? "[]"),
     tags: JSON.parse(row.tags ?? "[]"),
+    requiresModIds: JSON.parse(row.requires_mod_ids ?? "[]"),
+    conflictsWithModIds: JSON.parse(row.conflicts_with_mod_ids ?? "[]"),
     downloadCount: row.download_count ?? 0,
     commentCount: row.comment_count ?? 0,
     likeCount: row.like_count ?? 0,
@@ -459,6 +485,29 @@ mods.patch("/:id", async (c) => {
     if (bannedTag) return c.json({ error: `tag "${bannedTag}" is not allowed` }, 400);
     sets.push("tags = ?");
     values.push(JSON.stringify(tags));
+  }
+  if (body.requiresModIds !== undefined || body.conflictsWithModIds !== undefined) {
+    const requiresModIds = validateModIdArray(body.requiresModIds);
+    if (!requiresModIds) return c.json({ error: `requiresModIds must be an array of mod ids, max ${MAX_RELATED_MODS}` }, 400);
+    const conflictsWithModIds = validateModIdArray(body.conflictsWithModIds);
+    if (!conflictsWithModIds) {
+      return c.json({ error: `conflictsWithModIds must be an array of mod ids, max ${MAX_RELATED_MODS}` }, 400);
+    }
+    if (requiresModIds.includes(modId) || conflictsWithModIds.includes(modId)) {
+      return c.json({ error: "a mod can't require or conflict with itself" }, 400);
+    }
+    const missingRequires = await findMissingModId(c.env, requiresModIds);
+    if (missingRequires) return c.json({ error: `requires unknown mod '${missingRequires}'` }, 400);
+    const missingConflicts = await findMissingModId(c.env, conflictsWithModIds);
+    if (missingConflicts) return c.json({ error: `conflicts with unknown mod '${missingConflicts}'` }, 400);
+    if (body.requiresModIds !== undefined) {
+      sets.push("requires_mod_ids = ?");
+      values.push(JSON.stringify(requiresModIds));
+    }
+    if (body.conflictsWithModIds !== undefined) {
+      sets.push("conflicts_with_mod_ids = ?");
+      values.push(JSON.stringify(conflictsWithModIds));
+    }
   }
   if (body.theme !== undefined) {
     const theme = validateTheme(body.theme);
@@ -673,8 +722,23 @@ mods.post("/", async (c) => {
   if (containsLink(theme)) return c.json({ error: "links aren't allowed in the category/theme" }, 400);
   if (tags.some(containsLink)) return c.json({ error: "links aren't allowed in tags" }, 400);
 
+  const requiresModIds = validateModIdArray(metadata.requiresModIds);
+  if (!requiresModIds) return c.json({ error: `requiresModIds must be an array of mod ids, max ${MAX_RELATED_MODS}` }, 400);
+  const conflictsWithModIds = validateModIdArray(metadata.conflictsWithModIds);
+  if (!conflictsWithModIds) {
+    return c.json({ error: `conflictsWithModIds must be an array of mod ids, max ${MAX_RELATED_MODS}` }, 400);
+  }
+
   const modId = slugify(metadata.name);
   if (!modId) return c.json({ error: "name produced an empty slug" }, 400);
+
+  if (requiresModIds.includes(modId) || conflictsWithModIds.includes(modId)) {
+    return c.json({ error: "a mod can't require or conflict with itself" }, 400);
+  }
+  const missingRequires = await findMissingModId(c.env, requiresModIds);
+  if (missingRequires) return c.json({ error: `requires unknown mod '${missingRequires}'` }, 400);
+  const missingConflicts = await findMissingModId(c.env, conflictsWithModIds);
+  if (missingConflicts) return c.json({ error: `conflicts with unknown mod '${missingConflicts}'` }, 400);
 
   const existing = await c.env.DB.prepare("SELECT id FROM mods WHERE id = ?").bind(modId).first();
   if (existing) {
@@ -692,8 +756,8 @@ mods.post("/", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, sub_author, description, install_instructions, risk_notes, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mods (id, name, author, sub_author, description, install_instructions, risk_notes, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, requires_mod_ids, conflicts_with_mod_ids, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         modId,
         metadata.name,
@@ -710,6 +774,8 @@ mods.post("/", async (c) => {
         thumbnailPosition,
         JSON.stringify(screenshotUrls),
         JSON.stringify(tags),
+        JSON.stringify(requiresModIds),
+        JSON.stringify(conflictsWithModIds),
         modder.id,
         now,
         now
