@@ -32,7 +32,7 @@ import {
 import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
 import { deleteAccount, login, logout, signup, updateAvatar, updateGithubUrl } from "../api";
 import { useAccount } from "../useAccount";
-import { consumeAccountSettingsRequest, subscribeAccountNav } from "../accountNav";
+import { clearAccountSettingsRequest, peekAccountSettingsRequest, subscribeAccountNav } from "../accountNav";
 import { RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import Avatar from "../components/Avatar";
@@ -62,8 +62,9 @@ function formatSnapshotSize(bytes: number): string {
 export default function Settings() {
   // The header's LOGIN/account-name control (App.tsx) jumps straight to the
   // Account section instead of dumping the user on "folders" — see
-  // accountNav.ts for why this is a consumed flag, not a live subscription.
-  const [section, setSection] = useState<Section>(() => (consumeAccountSettingsRequest() ? "account" : "folders"));
+  // accountNav.ts for why the flag is only peeked here (not cleared; that
+  // happens in the effect below).
+  const [section, setSection] = useState<Section>(() => (peekAccountSettingsRequest() ? "account" : "folders"));
   const [metadataPatchesPath, setMetadataPatchesPathState] = useState(getMetadataPatchesPath() ?? "");
   const [scriptsPath, setScriptsPathState] = useState(getScriptsPath() ?? "");
   const [saved, setSaved] = useState(false);
@@ -96,7 +97,11 @@ export default function Settings() {
     if (section === "backups") loadSnapshots();
   }, [section]);
 
-  // Covers the case the initial-state consume above can't: the header's
+  // Consuming the flag here (a plain effect, safe to re-run) rather than in
+  // the useState initializer above — see accountNav.ts.
+  useEffect(() => clearAccountSettingsRequest(), []);
+
+  // Covers the case the initial-state peek above can't: the header's
   // account control clicked while already sitting on Settings (so it never
   // remounts) — see accountNav.ts.
   useEffect(() => subscribeAccountNav(() => setSection("account")), []);

@@ -25,8 +25,16 @@ export function openAccountSettings(): void {
   }
 }
 
-export function consumeAccountSettingsRequest(): boolean {
-  const wasPending = pendingAccountSection;
+// A non-mutating read, deliberately split from clearAccountSettingsRequest
+// below — React's StrictMode dev double-invokes useState lazy initializers
+// to catch impure ones, and a mutating "consume" called from inside one
+// loses the flag on the (discarded) second invocation, which is exactly
+// the bug this used to have: the account section only "stuck" on a second
+// click, once effects (not double-invoked the same way) had already fired.
+export function peekAccountSettingsRequest(): boolean {
+  return pendingAccountSection;
+}
+
+export function clearAccountSettingsRequest(): void {
   pendingAccountSection = false;
-  return wasPending;
 }
