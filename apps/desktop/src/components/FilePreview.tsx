@@ -6,6 +6,11 @@ interface FilePreviewProps {
   files: ZipTextEntry[];
   loading: boolean;
   error: string | null;
+  // Called with the currently-selected text (plus which file it's from)
+  // when the user asks to report a snippet — ModDetail owns the actual
+  // ReportButton this feeds into, since the report itself is scoped to the
+  // mod, not this preview component.
+  onReportSnippet?: (text: string) => void;
 }
 
 function renderContent(name: string, content: string) {
@@ -16,9 +21,10 @@ function renderContent(name: string, content: string) {
 // text-decodable entries, or the single raw .pluto/.txt itself. Nothing is
 // installed or written to disk here, this is read-only. A fullscreen
 // toggle opens the same content larger, in a closable overlay.
-export default function FilePreview({ files, loading, error }: FilePreviewProps) {
+export default function FilePreview({ files, loading, error, onReportSnippet }: FilePreviewProps) {
   const [active, setActive] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  const [selectedText, setSelectedText] = useState("");
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -29,11 +35,34 @@ export default function FilePreview({ files, loading, error }: FilePreviewProps)
     return () => document.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
+  // Tracks the current text selection so a "Report this snippet" action can
+  // appear only while one exists — cheap enough to just poll on every
+  // selectionchange rather than scope it precisely to this component's DOM.
+  useEffect(() => {
+    function onSelectionChange() {
+      setSelectedText(document.getSelection()?.toString() ?? "");
+    }
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, []);
+
   if (loading) return <p><span className="spinner" /> Loading preview…</p>;
   if (error) return <p className="error">{error}</p>;
   if (files.length === 0) return <p className="muted">Nothing previewable in this file.</p>;
 
   const current = files[Math.min(active, files.length - 1)];
+
+  function handleReportSnippet() {
+    const snippet = document.getSelection()?.toString().trim();
+    if (!snippet || !onReportSnippet) return;
+    onReportSnippet(`In ${current.name}:\n\n> ${snippet.replace(/\n/g, "\n> ")}\n\n`);
+  }
+
+  const reportSnippetBtn = onReportSnippet && selectedText.trim().length > 0 && (
+    <button className="button file-preview__report-snippet-btn" onClick={handleReportSnippet}>
+      Report this snippet
+    </button>
+  );
 
   const tabs = files.length > 1 && (
     <div className="file-preview__tabs">
@@ -53,6 +82,7 @@ export default function FilePreview({ files, loading, error }: FilePreviewProps)
     <div className="file-preview">
       <div className="file-preview__toolbar">
         {tabs}
+        {reportSnippetBtn}
         <button className="button file-preview__fullscreen-btn" onClick={() => setFullscreen(true)}>
           ⛶ Fullscreen
         </button>
@@ -64,7 +94,10 @@ export default function FilePreview({ files, loading, error }: FilePreviewProps)
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <span>{current.name}</span>
-              <button className="button" onClick={() => setFullscreen(false)}>✕ Close</button>
+              <div className="field__row">
+                {reportSnippetBtn}
+                <button className="button" onClick={() => setFullscreen(false)}>✕ Close</button>
+              </div>
             </div>
             {tabs}
             <pre className="file-preview__body file-preview__body--fullscreen">{renderContent(current.name, current.content)}</pre>

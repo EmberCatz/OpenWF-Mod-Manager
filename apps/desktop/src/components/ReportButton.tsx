@@ -1,19 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { submitReport } from "../api";
 import { toast } from "../toast";
 
 interface ReportButtonProps {
   targetType: "mod" | "comment";
   targetId: string;
+  // Set (with a new `nonce` each time, so the same snippet reported twice
+  // in a row still re-triggers) to force the form open pre-filled with a
+  // quoted code snippet — see FilePreview.tsx's "Report this snippet".
+  prefill?: { text: string; nonce: number };
 }
 
 // No review queue in the app itself — this just files a report the
 // operator checks directly (see apps/api/package.json's "reports:list"
 // script). Deliberately minimal: a reason, a submit button, done.
-export default function ReportButton({ targetType, targetId }: ReportButtonProps) {
+export default function ReportButton({ targetType, targetId, prefill }: ReportButtonProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState<"idle" | "working" | "done">("idle");
+
+  useEffect(() => {
+    if (!prefill) return;
+    setReason(prefill.text);
+    setStatus("idle");
+    setOpen(true);
+  }, [prefill?.nonce]);
 
   async function submit() {
     if (!reason.trim()) return;

@@ -63,6 +63,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [likeSummary, setLikeSummary] = useState<LikeSummary | null>(null);
 
   const [fullscreenScreenshot, setFullscreenScreenshot] = useState<string | null>(null);
+  const [snippetReport, setSnippetReport] = useState<{ text: string; nonce: number } | null>(null);
 
   useEffect(() => {
     if (!fullscreenScreenshot) return;
@@ -216,7 +217,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
               <div className="like-summary">
                 <LikeButton liked={likeSummary?.liked ?? false} count={likeSummary?.count ?? 0} onToggle={handleToggleLike} />
               </div>
-              <ReportButton targetType="mod" targetId={mod.id} />
+              <ReportButton targetType="mod" targetId={mod.id} prefill={snippetReport ?? undefined} />
               {account?.isAdmin && (
                 <div className="field__row">
                   {adminConfirming ? (
@@ -332,7 +333,12 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
 
             <div className="mod-detail-right">
               <h3>Preview</h3>
-              <FilePreview files={previewFiles} loading={previewLoading} error={previewError} />
+              <FilePreview
+                files={previewFiles}
+                loading={previewLoading}
+                error={previewError}
+                onReportSnippet={(text) => setSnippetReport({ text, nonce: Date.now() })}
+              />
             </div>
           </div>
 
