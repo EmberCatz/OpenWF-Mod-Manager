@@ -11,6 +11,7 @@ import ToastHost from "./components/ToastHost";
 import { useAccount } from "./useAccount";
 import { isLiveSettingsTabEnabled, subscribeSettings } from "./settings";
 import { subscribeProfileNav } from "./profileNav";
+import headerLogo from "./assets/logos/header-logo.png";
 
 const ALL_TABS = [
   { id: "browse", label: "Browse", view: Browse },
@@ -51,7 +52,10 @@ export default function App() {
 
   return (
     <main className="app">
-      <h1>OpenWF Mod Manager</h1>
+      <h1>
+        <img src={headerLogo} alt="" className="app-logo" />
+        OpenWF Mod Manager
+      </h1>
 
       <nav className="tabs">
         {tabs.map((tab) => (

@@ -38,14 +38,20 @@ body {
 }
 
 .app > h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
   margin: 0 0 1.25rem;
   font-family: "League Gothic", "Rajdhani", sans-serif;
   font-size: 2rem;
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-left: 4px solid var(--accent);
-  padding-left: 0.65rem;
+}
+
+.app-logo {
+  height: 2.25rem;
+  width: auto;
 }
 
 /* Shared breakpoint every side-by-side layout below collapses at
