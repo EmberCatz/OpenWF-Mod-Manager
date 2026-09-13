@@ -23,7 +23,15 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://openwf-mod-ma
 // `as T` cast — a stale/misconfigured backend sending an unexpected shape
 // throws one clear error here instead of a confusing crash somewhere deep
 // in a component that assumed the shape was right.
-async function readJsonOrThrow<T>(res: Response, schema: ZodType<T>, fallbackMessage: string): Promise<T> {
+// `ZodType<T, ZodTypeDef, any>` (not just `ZodType<T>`) — a schema with a
+// `.default()`-wrapped field has a wider *input* type than its parsed
+// output (the field can be omitted going in, never omitted coming out).
+// `ZodType<T>` defaults its Input parameter to Output, so without the
+// explicit `any` here, TS infers T by unifying against both the schema's
+// output AND input positions and unions the mismatched candidates —
+// surfacing as a spurious `| undefined` on exactly the defaulted fields
+// wherever this function's result gets assigned to a hand-written type.
+async function readJsonOrThrow<T>(res: Response, schema: ZodType<T, z.ZodTypeDef, any>, fallbackMessage: string): Promise<T> {
   const rawBody = await res.text();
   if (res.ok) {
     let raw: unknown;

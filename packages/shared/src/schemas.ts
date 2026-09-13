@@ -34,16 +34,22 @@ export const ModSchema = z.object({
   subAuthor: z.string().nullable(),
   ownerId: z.string(),
   description: z.string(),
-  installInstructions: z.string().nullable(),
-  riskNotes: z.string().nullable(),
+  // .default() (not just .nullable()) on these five — and on
+  // ModderProfileSchema's githubUrl below — since a production API
+  // deployed before this batch of features won't send these keys at all,
+  // not even as null. Without a default, zod's `.nullable()` alone still
+  // requires the key to be *present*, so an older deploy's response would
+  // otherwise fail parsing entirely instead of just missing the new data.
+  installInstructions: z.string().nullable().default(null),
+  riskNotes: z.string().nullable().default(null),
   category: ModCategorySchema,
   theme: z.string(),
   thumbnailUrl: z.string().nullable(),
   thumbnailPosition: z.string(),
   screenshotUrls: z.array(z.string()),
   tags: z.array(z.string()),
-  requiresModIds: z.array(z.string()),
-  conflictsWithModIds: z.array(z.string()),
+  requiresModIds: z.array(z.string()).default([]),
+  conflictsWithModIds: z.array(z.string()).default([]),
   downloadCount: z.number(),
   commentCount: z.number(),
   likeCount: z.number(),
@@ -76,7 +82,7 @@ export const ModderProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   avatarKey: z.string(),
-  githubUrl: z.string().nullable(),
+  githubUrl: z.string().nullable().default(null),
   createdAt: z.string(),
   mods: z.array(ModWithVersionsSchema),
 });
