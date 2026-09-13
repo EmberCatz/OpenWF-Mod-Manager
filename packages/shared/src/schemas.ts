@@ -35,6 +35,7 @@ export const ModSchema = z.object({
   ownerId: z.string(),
   description: z.string(),
   installInstructions: z.string().nullable(),
+  riskNotes: z.string().nullable(),
   category: ModCategorySchema,
   theme: z.string(),
   thumbnailUrl: z.string().nullable(),

@@ -901,6 +901,25 @@ body {
   margin: 0.75rem 0;
 }
 
+.mod-detail__risk-notes {
+  background: #3a2226;
+  border: 1px solid #6e2f34;
+  color: #ff8a8a;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.mod-detail__risk-notes h4 {
+  margin: 0 0 0.35rem;
+  color: #ff8a8a;
+}
+
+.mod-detail__risk-notes p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .mod-detail__install-instructions {
   background: var(--panel-alt);
   border: 1px solid var(--border);

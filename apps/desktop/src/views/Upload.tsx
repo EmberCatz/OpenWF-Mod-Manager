@@ -23,6 +23,7 @@ const initialNewModForm = {
   subAuthor: "",
   description: "",
   installInstructions: "",
+  riskNotes: "",
   category: "metadata-patch" as ModCategory,
   theme: "",
   version: "1.0.0",
@@ -117,6 +118,7 @@ export default function Upload() {
             subAuthor: newModForm.subAuthor || undefined,
             description: newModForm.description,
             installInstructions: newModForm.installInstructions || undefined,
+            riskNotes: newModForm.riskNotes || undefined,
             category: newModForm.category,
             theme: newModForm.theme,
             version: newModForm.version,
@@ -201,6 +203,15 @@ export default function Upload() {
                   value={newModForm.installInstructions}
                   onChange={(e) => setNewModForm({ ...newModForm, installInstructions: e.target.value })}
                   rows={3}
+                />
+              </label>
+              <label className="field">
+                <span>Anything to watch out for? (optional)</span>
+                <span className="hint">Things players should know before installing — what could break, known conflicts, etc.</span>
+                <textarea
+                  value={newModForm.riskNotes}
+                  onChange={(e) => setNewModForm({ ...newModForm, riskNotes: e.target.value })}
+                  rows={2}
                 />
               </label>
               <label className="field">

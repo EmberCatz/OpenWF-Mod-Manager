@@ -33,6 +33,7 @@ export const MAX_TAG_LENGTH = 30;
 export const MAX_THEME_LENGTH = 40;
 const MAX_SUB_AUTHOR_LENGTH = 60;
 const MAX_INSTALL_INSTRUCTIONS_LENGTH = 2000;
+const MAX_RISK_NOTES_LENGTH = 2000;
 const MAX_COMMENT_BODY_LENGTH = 2000;
 const MAX_AUTHOR_NAME_LENGTH = 40;
 const MAX_COMMENTS_LISTED = 200;
@@ -216,6 +217,18 @@ function validateInstallInstructions(input: unknown): { ok: true; value: string 
   return { ok: true, value: trimmed || null };
 }
 
+// Optional author-authored warning block — same shape as
+// validateInstallInstructions. Purely author-declared, no admin/moderation
+// involvement (see TODO.md § Ideas — "Mod risk/warning banner").
+function validateRiskNotes(input: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (input === undefined) return { ok: true, value: null };
+  if (input === null) return { ok: true, value: null };
+  if (typeof input !== "string") return { ok: false };
+  const trimmed = input.trim();
+  if (trimmed.length > MAX_RISK_NOTES_LENGTH) return { ok: false };
+  return { ok: true, value: trimmed || null };
+}
+
 export function rowToVersion(row: any): ModVersion {
   return {
     id: row.id,
@@ -254,6 +267,7 @@ export function rowToMod(row: any): Mod {
     ownerId: row.owner_id,
     description: row.description,
     installInstructions: row.install_instructions ?? null,
+    riskNotes: row.risk_notes ?? null,
     category: row.category,
     theme: row.theme ?? "Uncategorized",
     thumbnailUrl: row.thumbnail_url ?? null,
@@ -403,6 +417,15 @@ mods.patch("/:id", async (c) => {
       return c.json({ error: "links aren't allowed in install instructions" }, 400);
     }
     sets.push("install_instructions = ?");
+    values.push(result.value);
+  }
+  if (body.riskNotes !== undefined) {
+    const result = validateRiskNotes(body.riskNotes);
+    if (!result.ok) return c.json({ error: `riskNotes must be a string up to ${MAX_RISK_NOTES_LENGTH} chars` }, 400);
+    if (result.value && containsLink(result.value)) {
+      return c.json({ error: "links aren't allowed in the risk/warning notes" }, 400);
+    }
+    sets.push("risk_notes = ?");
     values.push(result.value);
   }
   if (body.thumbnailUrl !== undefined) {
@@ -629,6 +652,10 @@ mods.post("/", async (c) => {
   if (!installInstructionsResult.ok) {
     return c.json({ error: `installInstructions must be a string up to ${MAX_INSTALL_INSTRUCTIONS_LENGTH} chars` }, 400);
   }
+  const riskNotesResult = validateRiskNotes(metadata.riskNotes);
+  if (!riskNotesResult.ok) {
+    return c.json({ error: `riskNotes must be a string up to ${MAX_RISK_NOTES_LENGTH} chars` }, 400);
+  }
 
   if (containsLink(metadata.name)) return c.json({ error: "links aren't allowed in the mod name" }, 400);
   if (metadata.description && containsLink(metadata.description)) {
@@ -639,6 +666,9 @@ mods.post("/", async (c) => {
   }
   if (installInstructionsResult.value && containsLink(installInstructionsResult.value)) {
     return c.json({ error: "links aren't allowed in install instructions" }, 400);
+  }
+  if (riskNotesResult.value && containsLink(riskNotesResult.value)) {
+    return c.json({ error: "links aren't allowed in the risk/warning notes" }, 400);
   }
   if (containsLink(theme)) return c.json({ error: "links aren't allowed in the category/theme" }, 400);
   if (tags.some(containsLink)) return c.json({ error: "links aren't allowed in tags" }, 400);
@@ -662,8 +692,8 @@ mods.post("/", async (c) => {
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mods (id, name, author, sub_author, description, install_instructions, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mods (id, name, author, sub_author, description, install_instructions, risk_notes, category, theme, thumbnail_url, thumbnail_position, screenshot_urls, tags, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         modId,
         metadata.name,
@@ -673,6 +703,7 @@ mods.post("/", async (c) => {
         subAuthorResult.value,
         metadata.description ?? "",
         installInstructionsResult.value,
+        riskNotesResult.value,
         metadata.category,
         theme,
         metadata.thumbnailUrl ?? null,

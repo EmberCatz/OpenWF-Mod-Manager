@@ -23,6 +23,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
   const [name, setName] = useState(mod.name);
   const [description, setDescription] = useState(mod.description);
   const [installInstructions, setInstallInstructions] = useState(mod.installInstructions ?? "");
+  const [riskNotes, setRiskNotes] = useState(mod.riskNotes ?? "");
   const [thumbnailUrl, setThumbnailUrl] = useState(mod.thumbnailUrl ?? "");
   const [thumbnailPosition, setThumbnailPosition] = useState(mod.thumbnailPosition);
   const [screenshotUrlsText, setScreenshotUrlsText] = useState(mod.screenshotUrls.join("\n"));
@@ -53,6 +54,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
           name: name.trim(),
           description,
           installInstructions: installInstructions.trim() || null,
+          riskNotes: riskNotes.trim() || null,
           thumbnailUrl: thumbnailUrl.trim() || null,
           thumbnailPosition: thumbnailUrl.trim() ? thumbnailPosition : undefined,
           screenshotUrls: previewScreenshotUrls,
@@ -83,6 +85,11 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
         <span>Install Instructions</span>
         <span className="hint">Steps specific to this mod, separate from the general description.</span>
         <textarea rows={3} value={installInstructions} onChange={(e) => setInstallInstructions(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Anything to watch out for?</span>
+        <span className="hint">Things players should know before installing — what could break, known conflicts, etc.</span>
+        <textarea rows={2} value={riskNotes} onChange={(e) => setRiskNotes(e.target.value)} />
       </label>
       <label className="field">
         <span>Thumbnail URL</span>

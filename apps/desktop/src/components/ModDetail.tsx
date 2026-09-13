@@ -241,6 +241,13 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                   ))}
                 </div>
               )}
+              {mod.riskNotes && (
+                <div className="mod-detail__risk-notes">
+                  <h4>⚠ Before you install</h4>
+                  <p>{mod.riskNotes}</p>
+                </div>
+              )}
+
               <p className="mod-detail__description">{mod.description}</p>
 
               {mod.installInstructions && (
