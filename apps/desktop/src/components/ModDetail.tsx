@@ -62,6 +62,17 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
 
   const [likeSummary, setLikeSummary] = useState<LikeSummary | null>(null);
 
+  const [fullscreenScreenshot, setFullscreenScreenshot] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!fullscreenScreenshot) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreenScreenshot(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fullscreenScreenshot]);
+
   useEffect(() => {
     fetchMod(modId)
       .then((m) => {
@@ -235,8 +246,26 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
               {mod.screenshotUrls.length > 0 && (
                 <div className="mod-detail__screenshots">
                   {mod.screenshotUrls.map((url) => (
-                    <img key={url} src={url} alt="" className="mod-detail__screenshot" />
+                    <img
+                      key={url}
+                      src={url}
+                      alt=""
+                      className="mod-detail__screenshot"
+                      onClick={() => setFullscreenScreenshot(url)}
+                    />
                   ))}
+                </div>
+              )}
+
+              {fullscreenScreenshot && (
+                <div className="modal-overlay" onClick={() => setFullscreenScreenshot(null)}>
+                  <div className="modal-box modal-box--screenshot" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <span>{mod.name}</span>
+                      <button className="button" onClick={() => setFullscreenScreenshot(null)}>✕ Close</button>
+                    </div>
+                    <img src={fullscreenScreenshot} alt="" className="mod-detail__screenshot--fullscreen" />
+                  </div>
                 </div>
               )}
 
