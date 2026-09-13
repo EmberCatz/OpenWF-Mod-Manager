@@ -85,6 +85,15 @@ export function DownloadIcon({ className }: IconProps) {
   );
 }
 
+export function FileIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h9l4 4v14H6V3z" />
+      <path d="M15 3v4h4" />
+    </svg>
+  );
+}
+
 export function CommentIcon({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

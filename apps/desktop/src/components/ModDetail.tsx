@@ -10,7 +10,7 @@ import { getReviewerId } from "../reviewerId";
 import { setLiked } from "../likedMods";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
-import { CheckCircleIcon, RefreshIcon, TrashIcon } from "../icons";
+import { CheckCircleIcon, FileIcon, RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import LikeButton from "./LikeButton";
 import FilePreview from "./FilePreview";
@@ -58,8 +58,12 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [adminConfirming, setAdminConfirming] = useState(false);
   const [adminBusy, setAdminBusy] = useState(false);
 
+  // The version currently open in the fullscreen file-preview modal (see
+  // version-history__file-btn below) — null means the modal is closed.
+  // Fetched on demand per version clicked, not preloaded for all of them.
+  const [previewVersion, setPreviewVersion] = useState<ModVersion | null>(null);
   const [previewFiles, setPreviewFiles] = useState<ZipTextEntry[]>([]);
-  const [previewLoading, setPreviewLoading] = useState(true);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [likeSummary, setLikeSummary] = useState<LikeSummary | null>(null);
@@ -93,27 +97,25 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       .catch(() => {}); // likes are a nice-to-have — a failure here shouldn't block the rest of the page
   }, [modId]);
 
-  // Previews the latest version's file(s) — a zip's text-decodable entries,
-  // or the single raw .pluto/.txt itself. Nothing touches disk.
-  useEffect(() => {
-    const latest = mod?.versions[0];
-    if (!latest) {
-      setPreviewLoading(false);
-      return;
-    }
-    setPreviewLoading(true);
+  // Opens the fullscreen preview modal for one version's file(s) — a zip's
+  // text-decodable entries, or the single raw .pluto/.txt itself. Nothing
+  // touches disk; this only downloads bytes into memory to decode them.
+  function openFilePreview(version: ModVersion) {
+    setPreviewVersion(version);
+    setPreviewFiles([]);
     setPreviewError(null);
-    downloadModFile(latest.downloadUrl)
+    setPreviewLoading(true);
+    downloadModFile(version.downloadUrl)
       .then(async (bytes) => {
-        if (latest.fileName.toLowerCase().endsWith(".zip")) {
+        if (version.fileName.toLowerCase().endsWith(".zip")) {
           setPreviewFiles(await listZipTextEntries(bytes));
         } else {
-          setPreviewFiles([{ name: latest.fileName, content: new TextDecoder().decode(bytes) }]);
+          setPreviewFiles([{ name: version.fileName, content: new TextDecoder().decode(bytes) }]);
         }
       })
       .catch((e) => setPreviewError(String(e)))
       .finally(() => setPreviewLoading(false));
-  }, [mod?.versions[0]?.id]);
+  }
 
   async function handleToggleLike() {
     try {
@@ -218,143 +220,149 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
 
       {mod && (
         <>
-          <div className="mod-detail-columns">
-            <div className="mod-detail-left">
-              <h2 className="mod-detail__title">{mod.name}</h2>
-              <p className="muted">
-                by <AuthorLink name={mod.author} accountId={mod.ownerId} />
-                {mod.subAuthor && <> · with {mod.subAuthor}</>} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
-              </p>
-              <div className="like-summary">
-                <LikeButton liked={likeSummary?.liked ?? false} count={likeSummary?.count ?? 0} onToggle={handleToggleLike} />
-              </div>
-              <ReportButton targetType="mod" targetId={mod.id} prefill={snippetReport ?? undefined} />
-              {account?.isAdmin && (
-                <div className="field__row">
-                  {adminConfirming ? (
-                    <>
-                      <span className="error">Delete this mod (admin)? This can't be undone.</span>
-                      <button className="button button--danger" disabled={adminBusy} onClick={handleAdminDelete}>
-                        Confirm
-                      </button>
-                      <button className="button" onClick={() => setAdminConfirming(false)}>Cancel</button>
-                    </>
-                  ) : (
-                    <button className="button button--danger" onClick={() => setAdminConfirming(true)}>
-                      <TrashIcon className="btn-icon" /> Delete (admin)
+          <div className="mod-detail-body">
+            <h2 className="mod-detail__title">{mod.name}</h2>
+            <p className="muted">
+              by <AuthorLink name={mod.author} accountId={mod.ownerId} />
+              {mod.subAuthor && <> · with {mod.subAuthor}</>} · {formatCount(mod.downloadCount)} download{mod.downloadCount === 1 ? "" : "s"}
+            </p>
+            <div className="like-summary">
+              <LikeButton liked={likeSummary?.liked ?? false} count={likeSummary?.count ?? 0} onToggle={handleToggleLike} />
+            </div>
+            <ReportButton targetType="mod" targetId={mod.id} prefill={snippetReport ?? undefined} />
+            {account?.isAdmin && (
+              <div className="field__row">
+                {adminConfirming ? (
+                  <>
+                    <span className="error">Delete this mod (admin)? This can't be undone.</span>
+                    <button className="button button--danger" disabled={adminBusy} onClick={handleAdminDelete}>
+                      Confirm
                     </button>
-                  )}
-                </div>
-              )}
-              {mod.tags.length > 0 && (
-                <div className="mod-card__tags">
-                  {mod.tags.map((t) => (
-                    <span key={t} className="badge badge--tag">{t}</span>
-                  ))}
-                </div>
-              )}
-              {mod.riskNotes && (
-                <div className="mod-detail__risk-notes">
-                  <h4>⚠ Before you install</h4>
-                  <p>{mod.riskNotes}</p>
-                </div>
-              )}
+                    <button className="button" onClick={() => setAdminConfirming(false)}>Cancel</button>
+                  </>
+                ) : (
+                  <button className="button button--danger" onClick={() => setAdminConfirming(true)}>
+                    <TrashIcon className="btn-icon" /> Delete (admin)
+                  </button>
+                )}
+              </div>
+            )}
+            {mod.tags.length > 0 && (
+              <div className="mod-card__tags">
+                {mod.tags.map((t) => (
+                  <span key={t} className="badge badge--tag">{t}</span>
+                ))}
+              </div>
+            )}
+            {mod.riskNotes && (
+              <div className="mod-detail__risk-notes">
+                <h4>⚠ Before you install</h4>
+                <p>{mod.riskNotes}</p>
+              </div>
+            )}
 
-              <div
-                className="mod-detail__description"
-                dangerouslySetInnerHTML={{ __html: renderModDescription(mod.description) }}
-              />
+            <div
+              className="mod-detail__description"
+              dangerouslySetInnerHTML={{ __html: renderModDescription(mod.description) }}
+            />
 
-              {mod.installInstructions && (
-                <div className="mod-detail__install-instructions">
-                  <h4>Installation Notes</h4>
-                  <p>{mod.installInstructions}</p>
-                </div>
-              )}
+            {mod.installInstructions && (
+              <div className="mod-detail__install-instructions">
+                <h4>Installation Notes</h4>
+                <p>{mod.installInstructions}</p>
+              </div>
+            )}
 
-              {mod.screenshotUrls.length > 0 && (
-                <div className="mod-detail__screenshots">
-                  {mod.screenshotUrls.map((url) => (
-                    <img
-                      key={url}
-                      src={url}
-                      alt=""
-                      className="mod-detail__screenshot"
-                      onClick={() => setFullscreenScreenshot(url)}
-                    />
-                  ))}
-                </div>
-              )}
+            {mod.screenshotUrls.length > 0 && (
+              <div className="mod-detail__screenshots">
+                {mod.screenshotUrls.map((url) => (
+                  <img
+                    key={url}
+                    src={url}
+                    alt=""
+                    className="mod-detail__screenshot"
+                    onClick={() => setFullscreenScreenshot(url)}
+                  />
+                ))}
+              </div>
+            )}
 
-              {fullscreenScreenshot && (
-                <div className="modal-overlay" onClick={() => setFullscreenScreenshot(null)}>
-                  <div className="modal-box modal-box--screenshot" onClick={(e) => e.stopPropagation()}>
-                    <div className="modal-header">
-                      <span>{mod.name}</span>
-                      <button className="button" onClick={() => setFullscreenScreenshot(null)}>✕ Close</button>
-                    </div>
-                    <img src={fullscreenScreenshot} alt="" className="mod-detail__screenshot--fullscreen" />
+            {fullscreenScreenshot && (
+              <div className="modal-overlay" onClick={() => setFullscreenScreenshot(null)}>
+                <div className="modal-box modal-box--screenshot" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <span>{mod.name}</span>
+                    <button className="button" onClick={() => setFullscreenScreenshot(null)}>✕ Close</button>
                   </div>
+                  <img src={fullscreenScreenshot} alt="" className="mod-detail__screenshot--fullscreen" />
                 </div>
-              )}
+              </div>
+            )}
 
-              <h3>Versions</h3>
-              <ul className="version-history">
-                {mod.versions.map((version) => {
-                  const isInstalled = installedVersion === version.version;
-                  return (
-                    <li key={version.id} className="version-history__row">
-                      <div className="version-history__header">
-                        <span className="version-history__number">v{version.version}</span>
-                        <span className="muted">{formatBytes(version.fileSize)}</span>
-                        <span className="muted">{formatGameVersions(version.gameVersions)}</span>
-                        <span className="muted">{new Date(version.createdAt).toLocaleDateString()}</span>
-                        {isInstalled && (
-                          <span className="badge badge--installed">
-                            <CheckCircleIcon className="btn-icon" /> Installed
-                          </span>
-                        )}
-                      </div>
-                      {version.changelog && <p className="version-history__changelog">{version.changelog}</p>}
-                      <div className="version-history__actions">
-                        {canAutoInstall(mod.category) ? (
-                          <>
-                            <button
-                              className={`button ${isInstalled ? "button--reinstall" : ""}`}
-                              disabled={action.status === "working"}
-                              onClick={() => handleInstall(version)}
-                            >
-                              {isInstalled && <RefreshIcon className="btn-icon" />}
-                              {isInstalled ? "Reinstall" : "Install"}
-                            </button>
-                            {isInstalled && (
-                              <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
-                                <TrashIcon className="btn-icon" /> Uninstall
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          <button className="button" disabled={action.status === "working"} onClick={() => handleDownload(version)}>
-                            Download
+            <h3>Versions</h3>
+            <ul className="version-history">
+              {mod.versions.map((version) => {
+                const isInstalled = installedVersion === version.version;
+                return (
+                  <li key={version.id} className="version-history__row">
+                    <div className="version-history__header">
+                      <span className="version-history__number">v{version.version}</span>
+                      <button
+                        className="version-history__file-btn"
+                        title={`Preview ${version.fileName}`}
+                        onClick={() => openFilePreview(version)}
+                      >
+                        <FileIcon className="btn-icon" /> {version.fileName}
+                      </button>
+                      <span className="muted">{formatBytes(version.fileSize)}</span>
+                      <span className="muted">{formatGameVersions(version.gameVersions)}</span>
+                      <span className="muted">{new Date(version.createdAt).toLocaleDateString()}</span>
+                      {isInstalled && (
+                        <span className="badge badge--installed">
+                          <CheckCircleIcon className="btn-icon" /> Installed
+                        </span>
+                      )}
+                    </div>
+                    {version.changelog && <p className="version-history__changelog">{version.changelog}</p>}
+                    <div className="version-history__actions">
+                      {canAutoInstall(mod.category) ? (
+                        <>
+                          <button
+                            className={`button ${isInstalled ? "button--reinstall" : ""}`}
+                            disabled={action.status === "working"}
+                            onClick={() => handleInstall(version)}
+                          >
+                            {isInstalled && <RefreshIcon className="btn-icon" />}
+                            {isInstalled ? "Reinstall" : "Install"}
                           </button>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-
-            <div className="mod-detail-right">
-              <h3>Preview</h3>
-              <FilePreview
-                files={previewFiles}
-                loading={previewLoading}
-                error={previewError}
-                onReportSnippet={(text) => setSnippetReport({ text, nonce: Date.now() })}
-              />
-            </div>
+                          {isInstalled && (
+                            <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
+                              <TrashIcon className="btn-icon" /> Uninstall
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button className="button" disabled={action.status === "working"} onClick={() => handleDownload(version)}>
+                          Download
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
+
+          {previewVersion && (
+            <FilePreview
+              title={previewVersion.fileName}
+              files={previewFiles}
+              loading={previewLoading}
+              error={previewError}
+              onClose={() => setPreviewVersion(null)}
+              onReportSnippet={(text) => setSnippetReport({ text, nonce: Date.now() })}
+            />
+          )}
 
           <CommentSection modId={mod.id} modOwnerId={mod.ownerId} />
         </>
