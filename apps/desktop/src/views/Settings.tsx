@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { pickFolder } from "../native";
 import {
   DEFAULT_BOOTSTRAPPER_PORT,
@@ -22,7 +22,7 @@ import {
   setWebuiPort,
 } from "../settings";
 import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
-import { deleteAccount, login, logout, signup, updateAvatar } from "../api";
+import { deleteAccount, login, logout, signup, updateAvatar, updateGithubUrl } from "../api";
 import { useAccount } from "../useAccount";
 import { TrashIcon } from "../icons";
 import { toast } from "../toast";
@@ -58,6 +58,12 @@ export default function Settings() {
   const [authPassword, setAuthPassword] = useState("");
   const [authStatus, setAuthStatus] = useState<AuthStatus>({ kind: "idle" });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [githubUrlInput, setGithubUrlInput] = useState("");
+  const [githubUrlSaving, setGithubUrlSaving] = useState(false);
+
+  useEffect(() => {
+    setGithubUrlInput(account?.githubUrl ?? "");
+  }, [account?.githubUrl]);
 
   async function browse(title: string, setter: (v: string) => void) {
     const picked = await pickFolder(title);
@@ -124,6 +130,20 @@ export default function Settings() {
       setAccount(await updateAvatar(avatarKey, token));
     } catch (e) {
       toast.error(String(e));
+    }
+  }
+
+  async function handleGithubUrlSave() {
+    const token = await getApiKey();
+    if (!token) return;
+    setGithubUrlSaving(true);
+    try {
+      setAccount(await updateGithubUrl(githubUrlInput.trim() || null, token));
+      toast.success("GitHub link saved");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setGithubUrlSaving(false);
     }
   }
 
@@ -289,6 +309,18 @@ export default function Settings() {
                       <Avatar name={account.username} avatarKey={key} size={28} />
                     </button>
                   ))}
+                </div>
+                <span className="hint">GitHub link (optional, shown on your profile)</span>
+                <div className="field__row">
+                  <input
+                    type="text"
+                    value={githubUrlInput}
+                    onChange={(e) => setGithubUrlInput(e.target.value)}
+                    placeholder="https://github.com/your-username"
+                  />
+                  <button className="button" disabled={githubUrlSaving} onClick={handleGithubUrlSave}>
+                    {githubUrlSaving && <span className="spinner" />} Save
+                  </button>
                 </div>
                 <div className="field__row">
                   <button className="button" onClick={handleLogout}>Log out</button>

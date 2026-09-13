@@ -72,6 +72,7 @@ export const ModderProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   avatarKey: z.string(),
+  githubUrl: z.string().nullable(),
   createdAt: z.string(),
   mods: z.array(ModWithVersionsSchema),
 });

@@ -228,6 +228,7 @@ export interface Account {
   id: string;
   username: string;
   avatarKey: string;
+  githubUrl?: string | null;
   isAdmin?: boolean;
 }
 
@@ -260,6 +261,10 @@ export async function deleteAccount(token: string): Promise<void> {
 
 export async function updateAvatar(avatarKey: string, apiKey: string): Promise<Account> {
   return authedJson("PATCH", "/api/auth/me", { avatarKey }, apiKey);
+}
+
+export async function updateGithubUrl(githubUrl: string | null, apiKey: string): Promise<Account> {
+  return authedJson("PATCH", "/api/auth/me", { githubUrl }, apiKey);
 }
 
 // GET /api/modders/:id — a creator's public profile, opened from any

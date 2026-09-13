@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS modders (
     username      TEXT UNIQUE,            -- self-service account login, see routes/auth.ts
     password_hash TEXT,                   -- pbkdf2$<iterations>$<saltB64>$<hashB64>, see passwords.ts — never the plaintext
     avatar_key    TEXT NOT NULL DEFAULT 'amber', -- one of shared's AVATAR_KEYS — a fixed palette, not a custom upload, see routes/modders.ts
+    github_url    TEXT,                   -- optional, self-editable via PATCH /api/auth/me, shown on views/Profile.tsx
     is_admin      INTEGER NOT NULL DEFAULT 0,
     is_banned     INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))

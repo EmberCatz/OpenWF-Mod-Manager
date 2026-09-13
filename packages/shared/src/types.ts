@@ -171,6 +171,7 @@ export interface ModderProfile {
   id: string;
   name: string;
   avatarKey: string;
+  githubUrl: string | null;
   createdAt: string; // ISO 8601
   mods: ModWithVersions[];
 }

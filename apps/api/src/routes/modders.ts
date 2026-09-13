@@ -15,9 +15,9 @@ export const modders = new Hono<{ Bindings: Env }>();
 // risk sending someone to the wrong person's mods.
 modders.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const modderRow = await c.env.DB.prepare("SELECT id, name, avatar_key, created_at FROM modders WHERE id = ?")
+  const modderRow = await c.env.DB.prepare("SELECT id, name, avatar_key, github_url, created_at FROM modders WHERE id = ?")
     .bind(id)
-    .first<{ id: string; name: string; avatar_key: string; created_at: string }>();
+    .first<{ id: string; name: string; avatar_key: string; github_url: string | null; created_at: string }>();
   if (!modderRow) return c.json({ error: "not found" }, 404);
 
   const { results } = await c.env.DB.prepare(
@@ -36,6 +36,7 @@ modders.get("/:id", async (c) => {
     id: modderRow.id,
     name: modderRow.name,
     avatarKey: modderRow.avatar_key,
+    githubUrl: modderRow.github_url ?? null,
     createdAt: modderRow.created_at,
     mods: results.map(rowToModWithLatestVersion),
   };

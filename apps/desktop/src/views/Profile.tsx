@@ -47,6 +47,13 @@ export default function Profile({ accountId }: { accountId: string }) {
                 {profile.mods.length} mod{profile.mods.length === 1 ? "" : "s"} published · joined{" "}
                 {new Date(profile.createdAt).toLocaleDateString()}
               </span>
+              {profile.githubUrl && (
+                <div>
+                  <a href={profile.githubUrl} target="_blank" rel="noreferrer">
+                    GitHub
+                  </a>
+                </div>
+              )}
             </div>
           </div>
 

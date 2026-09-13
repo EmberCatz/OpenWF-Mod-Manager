@@ -130,24 +130,78 @@ auth.post("/logout", async (c) => {
 auth.get("/me", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ id: modder.id, username: modder.name, avatarKey: modder.avatarKey, isAdmin: modder.isAdmin });
+  const row = await c.env.DB.prepare("SELECT github_url FROM modders WHERE id = ?")
+    .bind(modder.id)
+    .first<{ github_url: string | null }>();
+  return c.json({
+    id: modder.id,
+    username: modder.name,
+    avatarKey: modder.avatarKey,
+    githubUrl: row?.github_url ?? null,
+    isAdmin: modder.isAdmin,
+  });
 });
 
-// PATCH /api/auth/me — { avatarKey }. Only the fixed-palette avatar is
-// self-editable here — name/username changes aren't supported (the name is
-// baked into every mod's `author` at upload time, see routes/mods.ts).
+// A github.com profile or repo link — restricted to that host for the same
+// reason thumbnails/screenshots are restricted to Imgur (see routes/mods.ts):
+// this is a public, unmoderated field, so an arbitrary host is otherwise an
+// unaudited link surface.
+function isGithubUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    return u.hostname === "github.com" || u.hostname === "www.github.com";
+  } catch {
+    return false;
+  }
+}
+
+// PATCH /api/auth/me — { avatarKey?, githubUrl? }. Only fields present in
+// the body are touched. Name/username changes aren't supported here (the
+// name is baked into every mod's `author` at upload time, see routes/mods.ts).
 auth.patch("/me", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
 
-  const body = await c.req.json<{ avatarKey?: string }>().catch(() => null);
-  const avatarKey = body?.avatarKey;
-  if (!avatarKey || !AVATAR_KEYS.includes(avatarKey as (typeof AVATAR_KEYS)[number])) {
-    return c.json({ error: `avatarKey must be one of: ${AVATAR_KEYS.join(", ")}` }, 400);
-  }
+  const body = await c.req.json<{ avatarKey?: string; githubUrl?: string | null }>().catch(() => null);
+  if (!body) return c.json({ error: "invalid JSON body" }, 400);
 
-  await c.env.DB.prepare("UPDATE modders SET avatar_key = ? WHERE id = ?").bind(avatarKey, modder.id).run();
-  return c.json({ id: modder.id, username: modder.name, avatarKey, isAdmin: modder.isAdmin });
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.avatarKey !== undefined) {
+    if (!AVATAR_KEYS.includes(body.avatarKey as (typeof AVATAR_KEYS)[number])) {
+      return c.json({ error: `avatarKey must be one of: ${AVATAR_KEYS.join(", ")}` }, 400);
+    }
+    sets.push("avatar_key = ?");
+    values.push(body.avatarKey);
+  }
+  if (body.githubUrl !== undefined) {
+    if (body.githubUrl === null || body.githubUrl === "") {
+      sets.push("github_url = ?");
+      values.push(null);
+    } else if (isGithubUrl(body.githubUrl)) {
+      sets.push("github_url = ?");
+      values.push(body.githubUrl);
+    } else {
+      return c.json({ error: "githubUrl must be a github.com URL" }, 400);
+    }
+  }
+  if (sets.length === 0) return c.json({ error: "no fields to update" }, 400);
+
+  values.push(modder.id);
+  await c.env.DB.prepare(`UPDATE modders SET ${sets.join(", ")} WHERE id = ?`).bind(...values).run();
+
+  const row = await c.env.DB.prepare("SELECT avatar_key, github_url FROM modders WHERE id = ?")
+    .bind(modder.id)
+    .first<{ avatar_key: string; github_url: string | null }>();
+  return c.json({
+    id: modder.id,
+    username: modder.name,
+    avatarKey: row?.avatar_key ?? modder.avatarKey,
+    githubUrl: row?.github_url ?? null,
+    isAdmin: modder.isAdmin,
+  });
 });
 
 // DELETE /api/auth/me — deletes the account (sessions cascade). Refuses
