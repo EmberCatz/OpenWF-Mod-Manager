@@ -163,16 +163,6 @@ export interface Comment {
   createdAt: string; // ISO 8601
 }
 
-// A single reviewer's like on a mod. reviewerId is a random UUID generated
-// once per install (apps/desktop/src/reviewerId.ts) and persisted in
-// localStorage — enough to let someone toggle their own like, not a real
-// identity or anti-abuse mechanism.
-export interface Like {
-  modId: string;
-  reviewerId: string;
-  createdAt: string; // ISO 8601
-}
-
 // GET /api/mods/:id/likes response — the total count plus (optionally)
 // whether this install itself has liked it.
 export interface LikeSummary {

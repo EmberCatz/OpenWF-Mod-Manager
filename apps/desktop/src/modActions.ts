@@ -92,7 +92,7 @@ function reconcileOverwrittenMods(conflicts: Conflict[]): void {
 // both extensions and have its files land in two different folders in
 // one install. Returns null for anything else (shouldn't happen — the API
 // only ever stores these two extensions).
-export function targetFolderForFile(fileName: string): string | null {
+function targetFolderForFile(fileName: string): string | null {
   const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
   if (ext === ".txt") return getMetadataPatchesPath();
   if (ext === ".pluto") return getScriptsPath();

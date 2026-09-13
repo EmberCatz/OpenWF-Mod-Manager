@@ -33,6 +33,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_modder_id ON sessions (modder_id);
 
+-- Step-up re-authentication for the handful of admin actions where a
+-- stolen-but-valid token does the most damage (kill-all-sessions, site-wide
+-- kill-switches, hard-deleting an account) — see TODO.md § Security. A
+-- short-lived, single-use token proving the caller just re-entered the
+-- account's password, checked by routes/admin.ts's requireReauth() on top
+-- of the normal requireAdmin() check.
+CREATE TABLE IF NOT EXISTS reauth_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    modder_id   TEXT NOT NULL REFERENCES modders(id) ON DELETE CASCADE,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_reauth_tokens_modder ON reauth_tokens(modder_id);
+
 CREATE TABLE IF NOT EXISTS mods (
     id              TEXT PRIMARY KEY,        -- slug, e.g. "ultimate-database"
     name            TEXT NOT NULL,
@@ -70,6 +85,20 @@ CREATE TABLE IF NOT EXISTS mod_versions (
 CREATE INDEX IF NOT EXISTS idx_mod_versions_mod_id ON mod_versions (mod_id);
 CREATE INDEX IF NOT EXISTS idx_mods_category ON mods (category);
 CREATE INDEX IF NOT EXISTS idx_mods_theme ON mods (theme);
+
+-- Backs the author-analytics downloads-over-time trend (TODO.md § Author
+-- analytics). mods.download_count (above) is a running total only —
+-- POST /:id/download never recorded a per-event row, so there was no way
+-- to reconstruct "how many downloads did this mod get last week" after the
+-- fact. A daily rollup (upserted once per download, see routes/mods.ts)
+-- keeps that answerable while bounding growth to one row per mod per day
+-- it's actually downloaded, rather than one row per download forever.
+CREATE TABLE IF NOT EXISTS mod_download_daily (
+    mod_id  TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
+    day     TEXT NOT NULL, -- YYYY-MM-DD, UTC
+    count   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (mod_id, day)
+);
 
 CREATE TABLE IF NOT EXISTS comments (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,

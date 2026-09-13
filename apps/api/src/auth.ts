@@ -8,7 +8,10 @@ export async function sha256Hex(input: string): Promise<string> {
 }
 
 // Same hashing used for both old-style API keys and new session tokens —
-// UPLOAD_API_KEY_SALT acts as a pepper either way, see hashApiKey below.
+// UPLOAD_API_KEY_SALT acts as a pepper either way. The out-of-band
+// modder-onboarding script (scripts/create-modder.mjs) reimplements this
+// inline via node:crypto rather than importing it, since it runs outside
+// the Worker.
 export async function hashToken(token: string, salt: string): Promise<string> {
   return sha256Hex(token + salt);
 }
@@ -58,11 +61,4 @@ export async function authenticate(c: Context<{ Bindings: Env }>): Promise<Modde
 
   if (!bySession || bySession.is_banned) return null;
   return toModder(bySession);
-}
-
-// Used only by the (out-of-band) modder-onboarding script, not by any HTTP
-// route — this style of key is still supported (see authenticate() above)
-// but new accounts should go through routes/auth.ts's self-service signup.
-export async function hashApiKey(apiKey: string, salt: string): Promise<string> {
-  return sha256Hex(apiKey + salt);
 }

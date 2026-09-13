@@ -73,7 +73,7 @@ the Warframe install folder:
 |---|---|
 | `metadata-patch` | Metadata Patches folder — normally `<Warframe folder>/OpenWF/Metadata Patches/` |
 | `pluto-script` | Scripts folder — normally `<Warframe folder>/OpenWF/Scripts/` |
-| `other` | No defined location — offered as a plain "Download" (user picks a save path) instead of "Install". |
+| `other` | No install behavior of its own — `mods.category` is purely a Browse/Upload label. Each file is routed by its own extension regardless of category (`.txt` → Metadata Patches, `.pluto` → Scripts); a file with neither extension has nowhere to go and errors at install time asking the user to set the matching folder. |
 
 These are two independent settings (Settings tab, each its own folder
 dialog), not derived from one shared root — kept explicit rather than
@@ -81,27 +81,29 @@ assumed, since not every install necessarily follows the same layout.
 Stored in the webview's `localStorage` (`apps/desktop/src/settings.ts` —
 local-only, never sent anywhere).
 
-**Raw file vs. zip**: most mods here are a single `.pluto` or `.txt` file,
-so uploads accept either that directly (no archive step) or a `.zip` for
-the minority of mods needing more than one file (e.g. a script with a
-companion data file, see the pluto-scripting guide). The desktop app picks
-the install path based on the downloaded version's `fileName` extension —
-`.zip` goes through extraction, anything else is placed directly under its
-own name.
+**Multiple raw files, no zip**: a version can bundle one or more raw
+`.pluto`/`.txt` files (`mod_versions.files`, a JSON array — see migration
+`0024_mod_version_files.sql`), each its own GitHub release asset.
+`.zip` uploads are no longer accepted at all — this replaced an earlier
+zip-based path for multi-file mods. `installVersion` (`modActions.ts`)
+downloads every file over plain HTTP, then places each one directly under
+its own name in the target folder matching its extension — there's no
+archive/extraction step anywhere in the install path anymore.
 
-Both paths are Rust commands
-(`apps/desktop/src-tauri/src/commands.rs`), not JS, deliberately: a plain
+Installing is a Rust command (`install_mod_file` in
+`apps/desktop/src-tauri/src/commands.rs`), not JS, deliberately: a plain
 Tauri command has ordinary OS file access without needing to keep the
-fs-plugin's scope config in sync with whatever folder the user picks, and
-`install_mod_zip` uses the `zip` crate's `enclosed_name()` as its zip-slip
-guard (returns `None`, entry silently skipped, for anything using `..` or
-an absolute path). `install_mod_file` treats the server-supplied file name
-as untrusted too — only its bare filename component is used, so a crafted
-`../../evil.pluto` can't escape the target folder either. The frontend
-never touches the filesystem directly — `apps/desktop/src/native.ts` is
-the only bridge, wrapping four commands: `read_file_bytes` (upload form),
-`write_file_bytes` (plain "Download" path), `install_mod_file`, and
-`install_mod_zip`.
+fs-plugin's scope config in sync with whatever folder the user picks.
+It treats the server-supplied file name as untrusted — only its bare
+filename component is used, so a crafted `../../evil.pluto` can't escape
+the target folder. The frontend never touches the filesystem directly —
+`apps/desktop/src/native.ts` is the only bridge. Uploading is the mirror
+image: `pick_and_read_mod_files` shows a native multi-select Open dialog
+and reads every picked file in one atomic Rust-side step (see
+`docs/redteam-audit-2026-09.md` §2.1 for why this replaced an earlier
+raw-path-taking `read_file_bytes` command). There's no user-facing
+"download to a chosen path" action anywhere in the app — every version's
+files are always installed, never just saved.
 
 ## Images: external links only
 

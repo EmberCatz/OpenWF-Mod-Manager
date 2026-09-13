@@ -279,8 +279,109 @@ testing) rather than letting them evaporate.
       `border-left` bar in `styles.css`.
 
 ## Up next
-- [ ] Tauri auto-updater, once builds are actually distributed as installers
-      rather than launched in dev mode
+
+Pre-production checklist for the desktop client + updater, from a full
+feature/readiness brainstorm (2026-09-13). Roughly ordered — the first two
+subsections are true blockers (can't ship an installer, or shouldn't open
+the catalog to the public, without them); the rest is cheap insurance or
+can trail the launch.
+
+### Updater & release pipeline (blocking)
+- [ ] Tauri auto-updater — `@tauri-apps/plugin-updater` + a signing keypair
+      (`tauri signer generate`) + a `plugins.updater` block in
+      `tauri.conf.json` pointing at a static `latest.json` manifest. Host
+      the manifest as a GitHub Release asset (same pattern mod files
+      already use) rather than standing up new infra, keeping the
+      $0/month stack intact. Needs: an in-app check-on-launch/manual
+      "Check for updates," a changelog dialog before applying (the
+      manifest's `notes` field, rendered the same way
+      `mod_versions.changelog` already is), and a decision on whether to
+      support an update channel (stable/beta) now rather than retrofit
+      one later once users are all pinned to a single manifest URL.
+- [ ] Build-and-release CI — no GitHub Actions workflow builds the app at
+      all today (only `scrape-game-versions.yml` exists). Add one using
+      `tauri-action` to cross-compile Windows/macOS/Linux bundles and
+      generate+sign the `latest.json` manifest above in the same job —
+      these two are really one piece of work.
+- [ ] Code signing decision — an unsigned Windows `.exe`/`.msi` gets
+      flagged by SmartScreen as "Unknown publisher," and macOS needs
+      notarization (Apple Developer account, $99/yr) or Gatekeeper blocks
+      it outright. Both cost money, breaking the API stack's deliberate
+      $0 constraint — decide explicitly which platforms get signed
+      installers at launch vs. ship unsigned/dev-mode for now, rather than
+      finding out from a user's screenshot of the warning.
+- [ ] CI typecheck gate on PRs — `apps/api`/`apps/desktop` both already
+      have working `typecheck` scripts; nothing runs them automatically,
+      so a broken build can merge today.
+
+### Content safety (blocking — highest risk given what mods can do)
+- [ ] Server-side file content validation on upload — already flagged in
+      `docs/architecture.md` § Security: "any file with an allowed
+      extension under the size cap is accepted as-is." At minimum, a
+      malware/heuristic scan (even a free-tier VirusTotal API check)
+      before accepting an upload, given mods are `.pluto` scripts that
+      run inside the Bootstrapper.
+- [ ] Narrow CORS from the current wide-open `app.use("*", cors())` —
+      already flagged in `docs/architecture.md` as "worth narrowing once
+      a production domain exists." This is that moment.
+- [ ] Terms of Use / acceptable-content policy, linked from Upload —
+      separate from the existing abuse-report mailbox (`reports` table);
+      this is about setting expectations up front and giving the operator
+      a documented basis to act on a takedown request (copyright, game
+      ToS violations), which matters more once this isn't just a small
+      Discord-adjacent tool.
+
+### Cheap insurance (bundle into the same pass)
+- [ ] Crash/error reporting from `ErrorBoundary.tsx` — right now it only
+      `console.error`s and offers Reload, so a user hitting it never
+      surfaces to anyone unless they self-report. Cheapest fix: a
+      "Report this error" button pre-filling a GitHub issue (or reusing
+      `ReportButton`'s pattern) with the error message, component stack,
+      app version, and OS — no new backend needed.
+- [ ] Unhandled promise rejection capture — `ErrorBoundary` only catches
+      render-time throws, not async errors (a failed `invoke()`, the API
+      being down), which is probably the more common real-world failure.
+- [ ] Real DB-backed health endpoint — `GET /` currently returns a static
+      `{status: "ok"}` without touching D1, so it can't detect a D1
+      outage. A `GET /api/health` doing a trivial `SELECT 1`, fronted by
+      a free uptime monitor.
+- [ ] Scheduled D1 backup/export — nothing exports the catalog off
+      Cloudflare's own infrastructure today; a weekly `wrangler d1
+      export` (GitHub Actions cron, same pattern as
+      `scrape-game-versions.yml`) is cheap insurance for the catalog's
+      only copy.
+- [ ] Public status page, even a static one — cheap trust signal and
+      deflects "is the site down for everyone" reports once there's a
+      real health endpoint to point it at.
+
+### First-run polish
+- [ ] First-run setup flow — detect/prompt for the Warframe folder and
+      walk through setting both install-folder paths before the first
+      Install attempt fails with "set the folder first." Matters most for
+      new/casual users a public launch brings in who don't already know
+      to route around this.
+
+### Post-launch growth ideas (not blocking)
+- [ ] Follow an author / notify on their new uploads — Profile pages and
+      the comment "Author" badge already lay the groundwork.
+- [ ] Notify when an installed mod has an update — ties into Installed
+      Mods' existing update-detection; currently only surfaces when the
+      app happens to be open.
+- [ ] Site-wide changelog/"what's new" feed aggregating recent uploads
+      across the whole catalog, not per-mod — useful once the catalog
+      outgrows one Browse-page glance.
+- [ ] Favorites/wishlist independent of installed state (browse on one
+      machine, install on another, or just "check this out later").
+
+### Small fixes to bundle in
+- [ ] `README.md` still advertises "0–5 star ratings" — stale since the
+      Like-system migration (see "Recently shipped" above); low effort,
+      but public-facing so more visible than the internal docs drift a
+      prior pass already fixed.
+- [ ] Confirm the CSP `connect-src`'s `http://localhost:*`/`127.0.0.1:*`
+      allowance (needed for local dev + the Live tabs' Bootstrapper/
+      SpaceNinjaServer iframes) is intentionally kept before shipping
+      wide, not just a dev leftover.
 
 ## Ideas, not committed to yet
 - [ ] Mod Settings tab — let players adjust exposed values in a `.pluto`
