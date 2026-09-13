@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import type { ModWithVersions, ModVersion, LikeSummary } from "@openwf-mod-manager/shared";
+import type { ModWithVersions, ModVersion, ModVersionFile, LikeSummary } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG } from "@openwf-mod-manager/shared";
 import { deleteMod, downloadModFile, fetchMod, fetchLikeSummary, toggleLike } from "../api";
-import { canAutoInstall, downloadVersion, DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
+import { DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { useConflictConfirm, useDeclaredConflictConfirm } from "./ConflictConfirmDialog";
 import { getInstalled } from "../installed";
-import { listZipTextEntries, type ZipTextEntry } from "../native";
 import { getReviewerId } from "../reviewerId";
 import { setLiked } from "../likedMods";
 import { getApiKey } from "../settings";
@@ -35,6 +34,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function totalBytes(version: ModVersion): number {
+  return version.files.reduce((sum, f) => sum + f.fileSize, 0);
+}
+
 function formatGameVersions(tags: string[]): string {
   if (tags.length === 0 || tags.includes(ALL_VERSIONS_TAG)) return "All Versions";
   return tags.join(", ");
@@ -58,11 +61,11 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
   const [adminConfirming, setAdminConfirming] = useState(false);
   const [adminBusy, setAdminBusy] = useState(false);
 
-  // The version currently open in the fullscreen file-preview modal (see
+  // The file currently open in the fullscreen file-preview modal (see
   // version-history__file-btn below) — null means the modal is closed.
-  // Fetched on demand per version clicked, not preloaded for all of them.
-  const [previewVersion, setPreviewVersion] = useState<ModVersion | null>(null);
-  const [previewFiles, setPreviewFiles] = useState<ZipTextEntry[]>([]);
+  // Fetched on demand per file clicked, not preloaded for all of them.
+  const [previewFile, setPreviewFile] = useState<ModVersionFile | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -97,22 +100,16 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       .catch(() => {}); // likes are a nice-to-have — a failure here shouldn't block the rest of the page
   }, [modId]);
 
-  // Opens the fullscreen preview modal for one version's file(s) — a zip's
-  // text-decodable entries, or the single raw .pluto/.txt itself. Nothing
-  // touches disk; this only downloads bytes into memory to decode them.
-  function openFilePreview(version: ModVersion) {
-    setPreviewVersion(version);
-    setPreviewFiles([]);
+  // Opens the fullscreen preview modal for a single file — always a raw
+  // .pluto/.txt, no zip decoding needed. Nothing touches disk; this only
+  // downloads bytes into memory to decode as text.
+  function openFilePreview(file: ModVersionFile) {
+    setPreviewFile(file);
+    setPreviewContent(null);
     setPreviewError(null);
     setPreviewLoading(true);
-    downloadModFile(version.downloadUrl)
-      .then(async (bytes) => {
-        if (version.fileName.toLowerCase().endsWith(".zip")) {
-          setPreviewFiles(await listZipTextEntries(bytes));
-        } else {
-          setPreviewFiles([{ name: version.fileName, content: new TextDecoder().decode(bytes) }]);
-        }
-      })
+    downloadModFile(file.downloadUrl)
+      .then((bytes) => setPreviewContent(new TextDecoder().decode(bytes)))
       .catch((e) => setPreviewError(String(e)))
       .finally(() => setPreviewLoading(false));
   }
@@ -160,18 +157,6 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
       } else {
         toast.error(String(e));
       }
-    } finally {
-      setAction({ status: "idle" });
-    }
-  }
-
-  async function handleDownload(version: ModVersion) {
-    setAction({ status: "working" });
-    try {
-      const message = await downloadVersion(version);
-      if (message && mod) toast.success(`${mod.name}: ${message}`);
-    } catch (e) {
-      toast.error(String(e));
     } finally {
       setAction({ status: "idle" });
     }
@@ -307,14 +292,7 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                   <li key={version.id} className="version-history__row">
                     <div className="version-history__header">
                       <span className="version-history__number">v{version.version}</span>
-                      <button
-                        className="version-history__file-btn"
-                        title={`Preview ${version.fileName}`}
-                        onClick={() => openFilePreview(version)}
-                      >
-                        <FileIcon className="btn-icon" /> {version.fileName}
-                      </button>
-                      <span className="muted">{formatBytes(version.fileSize)}</span>
+                      <span className="muted">{formatBytes(totalBytes(version))}</span>
                       <span className="muted">{formatGameVersions(version.gameVersions)}</span>
                       <span className="muted">{new Date(version.createdAt).toLocaleDateString()}</span>
                       {isInstalled && (
@@ -323,27 +301,31 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                         </span>
                       )}
                     </div>
+                    <div className="version-history__files">
+                      {version.files.map((file) => (
+                        <button
+                          key={file.fileName}
+                          className="version-history__file-btn"
+                          title={`Preview ${file.fileName}`}
+                          onClick={() => openFilePreview(file)}
+                        >
+                          <FileIcon className="btn-icon" /> {file.fileName}
+                        </button>
+                      ))}
+                    </div>
                     {version.changelog && <p className="version-history__changelog">{version.changelog}</p>}
                     <div className="version-history__actions">
-                      {canAutoInstall(mod.category) ? (
-                        <>
-                          <button
-                            className={`button ${isInstalled ? "button--reinstall" : ""}`}
-                            disabled={action.status === "working"}
-                            onClick={() => handleInstall(version)}
-                          >
-                            {isInstalled && <RefreshIcon className="btn-icon" />}
-                            {isInstalled ? "Reinstall" : "Install"}
-                          </button>
-                          {isInstalled && (
-                            <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
-                              <TrashIcon className="btn-icon" /> Uninstall
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <button className="button" disabled={action.status === "working"} onClick={() => handleDownload(version)}>
-                          Download
+                      <button
+                        className={`button ${isInstalled ? "button--reinstall" : ""}`}
+                        disabled={action.status === "working"}
+                        onClick={() => handleInstall(version)}
+                      >
+                        {isInstalled && <RefreshIcon className="btn-icon" />}
+                        {isInstalled ? "Reinstall" : "Install"}
+                      </button>
+                      {isInstalled && (
+                        <button className="button button--danger" disabled={action.status === "working"} onClick={handleUninstall}>
+                          <TrashIcon className="btn-icon" /> Uninstall
                         </button>
                       )}
                     </div>
@@ -353,13 +335,13 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
             </ul>
           </div>
 
-          {previewVersion && (
+          {previewFile && (
             <FilePreview
-              title={previewVersion.fileName}
-              files={previewFiles}
+              name={previewFile.fileName}
+              content={previewContent}
               loading={previewLoading}
               error={previewError}
-              onClose={() => setPreviewVersion(null)}
+              onClose={() => setPreviewFile(null)}
               onReportSnippet={(text) => setSnippetReport({ text, nonce: Date.now() })}
             />
           )}

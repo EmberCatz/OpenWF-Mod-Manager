@@ -8,13 +8,9 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            commands::pick_and_read_mod_file,
-            commands::pick_and_write_file,
+            commands::pick_and_read_mod_files,
             commands::install_mod_file,
             commands::compute_install_file_path,
-            commands::install_mod_zip,
-            commands::list_zip_install_paths,
-            commands::list_zip_text_entries,
             commands::uninstall_files,
             commands::scan_install_folder,
             commands::snapshot_install_folders,

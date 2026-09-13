@@ -52,9 +52,11 @@ export async function uploadReleaseAsset(
   filename: string,
   content: ArrayBuffer
 ): Promise<GithubAsset> {
+  // Every mod file is raw .pluto/.txt text now — no zip asset type to
+  // account for.
   const res = await fetch(`${uploadUrl}?name=${encodeURIComponent(filename)}`, {
     method: "POST",
-    headers: authHeaders(env, { "Content-Type": "application/zip" }),
+    headers: authHeaders(env, { "Content-Type": "text/plain; charset=utf-8" }),
     body: content,
   });
   if (!res.ok) {

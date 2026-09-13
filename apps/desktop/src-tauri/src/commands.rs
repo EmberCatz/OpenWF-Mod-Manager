@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
@@ -58,63 +58,21 @@ pub struct PickedFile {
     bytes: Vec<u8>,
 }
 
-// Every version is still exactly one uploaded file server-side (one
-// GitHub Release asset) — picking more than one here bundles them into a
-// single flat zip rather than the API gaining a concept of multi-file
-// versions. Two picked files with the same base name (from different
-// source folders) would otherwise silently overwrite each other inside
-// the archive, so a repeat gets "_2", "_3", etc. spliced in before the
-// extension. Pure/no-AppHandle so it's testable without a running app,
-// same reasoning as build_snapshot_zip below.
-fn bundle_files_into_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
-    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-    let mut used_names = std::collections::HashSet::new();
-    for (name, bytes) in files {
-        let mut zip_name = name.clone();
-        if !used_names.insert(zip_name.clone()) {
-            let (stem, ext) = match name.rsplit_once('.') {
-                Some((s, e)) => (s.to_string(), format!(".{e}")),
-                None => (name.clone(), String::new()),
-            };
-            let mut n = 2;
-            loop {
-                let candidate = format!("{stem}_{n}{ext}");
-                if used_names.insert(candidate.clone()) {
-                    zip_name = candidate;
-                    break;
-                }
-                n += 1;
-            }
-        }
-        writer
-            .start_file(&zip_name, options)
-            .map_err(|e| format!("failed to add '{zip_name}' to bundle: {e}"))?;
-        writer.write_all(bytes).map_err(|e| format!("failed to write '{zip_name}' into bundle: {e}"))?;
-    }
-
-    let cursor = writer.finish().map_err(|e| format!("failed to finalize bundle archive: {e}"))?;
-    Ok(cursor.into_inner())
-}
-
-// Shows a native "open file" dialog (same filters Upload.tsx always used),
-// allowing multiple selections, and reads the picked file(s) in one step.
-// A single file is returned as-is (so uploading one bare .pluto/.txt still
-// doesn't force a zip wrapper); more than one is bundled into a single zip
-// via bundle_files_into_zip, named after the first file picked. Returns
-// None if the user cancelled.
+// Shows a native "open file" dialog, allowing multiple selections, and
+// reads every picked file in one step — no bundling into a zip (the API
+// itself now accepts several raw .pluto/.txt files per version, see
+// routes/mods.ts). Returns an empty vec if the user cancelled.
 #[tauri::command]
-pub async fn pick_and_read_mod_file(app: tauri::AppHandle) -> Result<Option<PickedFile>, String> {
+pub async fn pick_and_read_mod_files(app: tauri::AppHandle) -> Result<Vec<PickedFile>, String> {
     let picked = app
         .dialog()
         .file()
         .set_title("Select mod file(s) to upload")
-        .add_filter("Mod file", &["pluto", "txt", "zip"])
+        .add_filter("Mod file", &["pluto", "txt"])
         .blocking_pick_files();
 
     let Some(file_paths) = picked else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
 
     let mut files = Vec::new();
@@ -125,43 +83,10 @@ pub async fn pick_and_read_mod_file(app: tauri::AppHandle) -> Result<Option<Pick
             .map(|n| n.to_string_lossy().into_owned())
             .ok_or_else(|| format!("picked file has no name: {}", path.display()))?;
         let bytes = fs::read(&path).map_err(|e| format!("failed to read '{}': {e}", path.display()))?;
-        files.push((file_name, bytes));
+        files.push(PickedFile { file_name, bytes });
     }
 
-    if files.len() == 1 {
-        let (file_name, bytes) = files.remove(0);
-        return Ok(Some(PickedFile { file_name, bytes }));
-    }
-
-    let bundle_name = match files.first() {
-        Some((first_name, _)) => match first_name.rsplit_once('.') {
-            Some((stem, _)) => format!("{stem}-bundle.zip"),
-            None => format!("{first_name}-bundle.zip"),
-        },
-        None => return Ok(None), // an empty selection shouldn't happen, but isn't an error
-    };
-    let bytes = bundle_files_into_zip(&files)?;
-    Ok(Some(PickedFile { file_name: bundle_name, bytes }))
-}
-
-// Shows a native "save file" dialog and writes bytes to wherever the user
-// picked in one step. Returns the path actually written to (for a "Saved
-// to X" confirmation), or None if the user cancelled.
-#[tauri::command]
-pub async fn pick_and_write_file(app: tauri::AppHandle, default_file_name: String, bytes: Vec<u8>) -> Result<Option<String>, String> {
-    let picked = app.dialog().file().set_file_name(&default_file_name).blocking_save_file();
-
-    let Some(file_path) = picked else {
-        return Ok(None);
-    };
-
-    let path = file_path.into_path().map_err(|e| e.to_string())?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("failed to create '{}': {e}", parent.display()))?;
-    }
-    fs::write(&path, bytes).map_err(|e| format!("failed to write '{}': {e}", path.display()))?;
-
-    Ok(Some(path.display().to_string()))
+    Ok(files)
 }
 
 // Shared by install_mod_file and its dry-run counterpart below, so the two
@@ -196,177 +121,10 @@ pub fn compute_install_file_path(target_dir: String, file_name: String) -> Resul
     Ok(safe_dest_path(&target_dir, &file_name)?.display().to_string())
 }
 
-// A small download that decompresses to gigabytes (a zip bomb) can fill a
-// user's disk — this caps the running total of bytes actually written
-// across every entry in one archive, same spirit as MAX_FILE_BYTES on the
-// upload side. Checked against real bytes copied, not each entry's
-// declared/uncompressed-size header (which a crafted zip could lie about),
-// so this holds even against an archive with falsified metadata.
-const MAX_UNCOMPRESSED_BYTES: u64 = 500 * 1024 * 1024;
-const COPY_CHUNK_BYTES: usize = 64 * 1024;
-
-// Copies from `entry` to `out_file` in bounded chunks, adding each chunk to
-// `running_total` and erroring out before writing anything that would push
-// the archive's cumulative uncompressed size past `cap`.
-fn copy_with_cap(entry: &mut impl Read, out_file: &mut fs::File, running_total: &mut u64, cap: u64) -> Result<(), String> {
-    let mut buf = [0u8; COPY_CHUNK_BYTES];
-    loop {
-        let n = entry.read(&mut buf).map_err(|e| format!("failed to read zip entry: {e}"))?;
-        if n == 0 {
-            return Ok(());
-        }
-        *running_total += n as u64;
-        if *running_total > cap {
-            return Err(format!(
-                "archive decompresses to more than the {}MB cap — refusing to extract (possible zip bomb)",
-                cap / (1024 * 1024)
-            ));
-        }
-        out_file.write_all(&buf[..n]).map_err(|e| format!("failed to write file: {e}"))?;
-    }
-}
-
-// Extracts a zip's contents directly into target_dir (which the frontend
-// has already resolved from the mod's category — see Browse.tsx). Used
-// only for the minority of mods that need more than one file.
-#[tauri::command]
-pub fn install_mod_zip(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<String>, String> {
-    extract_zip_with_cap(zip_bytes, target_dir, MAX_UNCOMPRESSED_BYTES)
-}
-
-// Dry-run counterpart to install_mod_zip — reports which files WOULD be
-// written (same path logic, same zip-slip skip via enclosed_name()) without
-// extracting anything, so the frontend can check the result against every
-// other mod's already-installed files before committing to an install that
-// would silently overwrite another mod's file. Cheap and zip-bomb-safe by
-// construction: entries are only inspected for their name/type, never
-// decompressed.
-#[tauri::command]
-pub fn list_zip_install_paths(zip_bytes: Vec<u8>, target_dir: String) -> Result<Vec<String>, String> {
-    let dir = PathBuf::from(&target_dir);
-    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("not a valid zip: {e}"))?;
-    let mut paths = Vec::new();
-
-    for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| format!("failed to read zip entry: {e}"))?;
-        let Some(relative_path) = entry.enclosed_name() else {
-            continue;
-        };
-        if entry.is_dir() {
-            continue;
-        }
-        paths.push(dir.join(&relative_path).display().to_string());
-    }
-
-    Ok(paths)
-}
-
-// `cap` is only a parameter (not always MAX_UNCOMPRESSED_BYTES) so the
-// zip-bomb-abort behavior can be exercised in a unit test without actually
-// writing hundreds of megabytes to disk.
-fn extract_zip_with_cap(zip_bytes: Vec<u8>, target_dir: String, cap: u64) -> Result<Vec<String>, String> {
-    let dir = PathBuf::from(&target_dir);
-    fs::create_dir_all(&dir).map_err(|e| format!("failed to create '{}': {e}", dir.display()))?;
-
-    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("not a valid zip: {e}"))?;
-    let mut extracted = Vec::new();
-    let mut running_total: u64 = 0;
-
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| format!("failed to read zip entry: {e}"))?;
-
-        // enclosed_name() is the zip crate's zip-slip guard: it returns None
-        // for any entry using ".." components or an absolute path, so this
-        // is the only check needed to keep extraction inside dir.
-        let Some(relative_path) = entry.enclosed_name() else {
-            continue; // unsafe entry path — silently skipped, not extracted
-        };
-
-        let dest_path = dir.join(&relative_path);
-
-        if entry.is_dir() {
-            fs::create_dir_all(&dest_path).map_err(|e| format!("failed to create '{}': {e}", dest_path.display()))?;
-            continue;
-        }
-
-        if let Some(parent) = dest_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("failed to create '{}': {e}", parent.display()))?;
-        }
-
-        let mut out_file = fs::File::create(&dest_path).map_err(|e| format!("failed to create '{}': {e}", dest_path.display()))?;
-        if let Err(err) = copy_with_cap(&mut entry, &mut out_file, &mut running_total, cap) {
-            drop(out_file);
-            // Abort cleanly rather than leaving a half-extracted mod behind:
-            // remove the file that was mid-write plus everything already
-            // extracted earlier in this same call.
-            let _ = fs::remove_file(&dest_path);
-            for path in &extracted {
-                let _ = fs::remove_file(path);
-            }
-            return Err(err);
-        }
-
-        // Absolute path, not just the relative in-zip path — the frontend
-        // stores this list verbatim to know what to delete on uninstall,
-        // without needing to remember which target_dir it came from.
-        extracted.push(dest_path.display().to_string());
-    }
-
-    Ok(extracted)
-}
-
-#[derive(serde::Serialize)]
-pub struct ZipTextEntry {
-    name: String,
-    content: String,
-}
-
-// Zip entries above this size, or beyond this count, are skipped rather
-// than previewed — these mods are small text bundles, so anything bigger
-// is almost certainly not something worth rendering inline anyway.
-const MAX_PREVIEW_ENTRIES: usize = 50;
-const MAX_PREVIEW_ENTRY_BYTES: u64 = 512 * 1024;
-
-// Lists the text-decodable entries of a zip in memory, for the mod detail
-// view's file preview — no extraction to disk, nothing installed. Binary
-// entries (images, etc.) are silently skipped since there's nothing sane
-// to render for them here.
-#[tauri::command]
-pub fn list_zip_text_entries(zip_bytes: Vec<u8>) -> Result<Vec<ZipTextEntry>, String> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("not a valid zip: {e}"))?;
-    let mut out = Vec::new();
-
-    for i in 0..archive.len() {
-        if out.len() >= MAX_PREVIEW_ENTRIES {
-            break;
-        }
-
-        let mut entry = archive.by_index(i).map_err(|e| format!("failed to read zip entry: {e}"))?;
-        if entry.is_dir() || entry.size() > MAX_PREVIEW_ENTRY_BYTES {
-            continue;
-        }
-
-        let Some(relative_path) = entry.enclosed_name() else {
-            continue;
-        };
-
-        let mut buf = Vec::new();
-        std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| format!("failed to read zip entry: {e}"))?;
-
-        let Ok(content) = String::from_utf8(buf) else {
-            continue; // binary — nothing sane to preview
-        };
-
-        out.push(ZipTextEntry { name: relative_path.display().to_string(), content });
-    }
-
-    Ok(out)
-}
-
 // Deletes a set of previously-installed files (paths as returned by
-// install_mod_file / install_mod_zip). Missing files are treated as
-// already-uninstalled, not an error — only real failures (permissions,
-// a path that's actually a directory, etc.) are collected and reported.
+// install_mod_file). Missing files are treated as already-uninstalled,
+// not an error — only real failures (permissions, a path that's actually
+// a directory, etc.) are collected and reported.
 #[tauri::command]
 pub fn uninstall_files(paths: Vec<String>) -> Result<(), String> {
     let mut errors = Vec::new();
@@ -386,8 +144,8 @@ pub fn uninstall_files(paths: Vec<String>) -> Result<(), String> {
 
 // Recursively collects every file (not directory) under `dir`, as absolute
 // path strings in the same `.display().to_string()` format install_mod_file
-// / install_mod_zip already use — so the frontend can directly diff this
-// against installed.ts's stored paths to find files it doesn't know about
+// already uses — so the frontend can directly diff this against
+// installed.ts's stored paths to find files it doesn't know about
 // (manually dropped in from the old Discord-link workflow this app exists
 // to replace). A missing folder returns an empty list rather than an error
 // — nothing installed there yet isn't a failure.
@@ -455,9 +213,8 @@ fn now_unix_millis() -> u64 {
 }
 
 // Pure zip-building step, split out from the #[tauri::command] wrapper so
-// it's testable without a running app (same reasoning as
-// extract_zip_with_cap vs. install_mod_zip above). Walks each folder with
-// the existing collect_files helper and stores every file under
+// it's testable without a running app. Walks each folder with the
+// existing collect_files helper and stores every file under
 // `<label>/<path relative to that folder>` inside the archive, so
 // apply_snapshot_zip can route each section back to wherever that label
 // points at restore time — not necessarily the same absolute path it was
@@ -582,44 +339,6 @@ pub fn delete_snapshot(app: tauri::AppHandle, file_name: String) -> Result<(), S
 mod tests {
     use super::*;
 
-    fn build_test_zip(entry_name: &str, content: &[u8]) -> Vec<u8> {
-        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        writer.start_file(entry_name, options).unwrap();
-        writer.write_all(content).unwrap();
-        writer.finish().unwrap().into_inner()
-    }
-
-    // Regression test for the zip-bomb cap (TODO.md § Security): a tiny cap
-    // stands in for MAX_UNCOMPRESSED_BYTES so the test doesn't actually need
-    // to write hundreds of megabytes to prove the abort path works.
-    #[test]
-    fn install_mod_zip_aborts_and_cleans_up_past_the_cap() {
-        let tmp = std::env::temp_dir().join(format!("owmm-ziptest-abort-{}", std::process::id()));
-        let zip_bytes = build_test_zip("payload.txt", &[0u8; 2000]);
-
-        let result = extract_zip_with_cap(zip_bytes, tmp.display().to_string(), 1000);
-
-        assert!(result.is_err(), "a 2000-byte entry should be rejected by a 1000-byte cap");
-        assert!(!tmp.join("payload.txt").exists(), "the partially-written file should be cleaned up on abort");
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn install_mod_zip_extracts_normally_under_the_cap() {
-        let tmp = std::env::temp_dir().join(format!("owmm-ziptest-ok-{}", std::process::id()));
-        let content = vec![7u8; 500];
-        let zip_bytes = build_test_zip("payload.txt", &content);
-
-        let result = extract_zip_with_cap(zip_bytes, tmp.display().to_string(), 1000);
-
-        assert!(result.is_ok());
-        assert_eq!(fs::read(tmp.join("payload.txt")).unwrap(), content);
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
     #[test]
     fn scan_install_folder_finds_nested_files_and_ignores_missing_dirs() {
         let tmp = std::env::temp_dir().join(format!("owmm-scantest-{}", std::process::id()));
@@ -640,21 +359,16 @@ mod tests {
     }
 
     // Regression test for the mod-conflict check (TODO.md): the dry-run
-    // commands must report the exact same paths the real install commands
-    // would write, or the conflict check they back is worthless.
+    // command must report the exact same path the real install command
+    // would write, or the conflict check it backs is worthless.
     #[test]
-    fn dry_run_paths_match_real_install_paths() {
+    fn dry_run_path_matches_real_install_path() {
         let tmp = std::env::temp_dir().join(format!("owmm-dryruntest-{}", std::process::id()));
         let target_dir = tmp.display().to_string();
 
         let computed_file_path = compute_install_file_path(target_dir.clone(), "Swarm.pluto".to_string()).unwrap();
         let real_file_path = install_mod_file(b"content".to_vec(), target_dir.clone(), "Swarm.pluto".to_string()).unwrap();
         assert_eq!(computed_file_path, real_file_path);
-
-        let zip_bytes = build_test_zip("nested/inner.txt", b"z");
-        let listed_zip_paths = list_zip_install_paths(zip_bytes.clone(), target_dir.clone()).unwrap();
-        let real_zip_paths = extract_zip_with_cap(zip_bytes, target_dir, MAX_UNCOMPRESSED_BYTES).unwrap();
-        assert_eq!(listed_zip_paths, real_zip_paths);
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -724,57 +438,4 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    #[test]
-    fn list_zip_install_paths_does_not_write_anything() {
-        let tmp = std::env::temp_dir().join(format!("owmm-dryrun-nowrite-{}", std::process::id()));
-        let zip_bytes = build_test_zip("payload.txt", b"content");
-
-        let paths = list_zip_install_paths(zip_bytes, tmp.display().to_string()).unwrap();
-
-        assert_eq!(paths.len(), 1);
-        assert!(!tmp.exists(), "a dry run must not create the target directory or any file in it");
-    }
-
-    fn read_zip_entries(bytes: Vec<u8>) -> std::collections::HashMap<String, Vec<u8>> {
-        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-        let mut out = std::collections::HashMap::new();
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).unwrap();
-            let mut content = Vec::new();
-            entry.read_to_end(&mut content).unwrap();
-            out.insert(entry.name().to_string(), content);
-        }
-        out
-    }
-
-    // Regression for multi-file upload (TODO.md): picking several files at
-    // once must bundle every one of them into the zip, byte for byte, not
-    // silently drop any.
-    #[test]
-    fn bundle_files_into_zip_includes_every_file() {
-        let files = vec![("a.pluto".to_string(), b"alpha".to_vec()), ("b.txt".to_string(), b"beta".to_vec())];
-
-        let entries = read_zip_entries(bundle_files_into_zip(&files).unwrap());
-
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries["a.pluto"], b"alpha");
-        assert_eq!(entries["b.txt"], b"beta");
-    }
-
-    // Two picked files can share a base name if they came from different
-    // source folders — the second must be renamed rather than silently
-    // overwriting the first's entry in the archive.
-    #[test]
-    fn bundle_files_into_zip_dedupes_repeated_names() {
-        let files = vec![
-            ("script.pluto".to_string(), b"first".to_vec()),
-            ("script.pluto".to_string(), b"second".to_vec()),
-        ];
-
-        let entries = read_zip_entries(bundle_files_into_zip(&files).unwrap());
-
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries["script.pluto"], b"first");
-        assert_eq!(entries["script_2.pluto"], b"second");
-    }
 }

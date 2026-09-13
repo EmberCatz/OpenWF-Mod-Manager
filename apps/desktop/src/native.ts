@@ -17,27 +17,15 @@ interface PickedFile {
   bytes: number[];
 }
 
-// Shows the native "open file" dialog (multi-select) and reads the picked
-// file(s), both on the Rust side (see commands.rs's rationale) — the path
-// never crosses back into JS as a string, so there's nothing here for a
-// compromised script to redirect to an arbitrary file. A single pick comes
-// back as-is; picking several bundles them into one zip on the Rust side,
-// since a mod version is still just one uploaded file. Returns null if
-// cancelled.
-export async function pickAndReadModFile(): Promise<{ fileName: string; bytes: Uint8Array } | null> {
-  const result = await invoke<PickedFile | null>("pick_and_read_mod_file");
-  if (!result) return null;
-  return { fileName: result.fileName, bytes: new Uint8Array(result.bytes) };
-}
-
-// Shows the native "save file" dialog and writes bytes to wherever the
-// user picked, both on the Rust side, same reasoning as above. Returns the
-// path actually written to, or null if cancelled.
-export async function pickAndWriteFile(defaultFileName: string, bytes: ArrayBuffer): Promise<string | null> {
-  return invoke<string | null>("pick_and_write_file", {
-    defaultFileName,
-    bytes: Array.from(new Uint8Array(bytes)),
-  });
+// Shows the native "open file" dialog (multi-select) and reads every
+// picked file, both on the Rust side (see commands.rs's rationale) — the
+// path never crosses back into JS as a string, so there's nothing here
+// for a compromised script to redirect to an arbitrary file. No bundling
+// — the API itself accepts several raw .pluto/.txt files per version.
+// Returns an empty array if cancelled.
+export async function pickModFiles(): Promise<{ fileName: string; bytes: Uint8Array }[]> {
+  const result = await invoke<PickedFile[]>("pick_and_read_mod_files");
+  return result.map((f) => ({ fileName: f.fileName, bytes: new Uint8Array(f.bytes) }));
 }
 
 // Installs a single raw file (.pluto/.txt) directly into targetDir under
@@ -50,34 +38,17 @@ export async function installModFile(bytes: ArrayBuffer, targetDir: string, file
   });
 }
 
-// Extracts a zip's contents into targetDir. Returns the absolute path of
-// every file actually extracted (used to track what to remove on uninstall).
-export async function installModZip(zipBytes: ArrayBuffer, targetDir: string): Promise<string[]> {
-  return invoke<string[]>("install_mod_zip", {
-    zipBytes: Array.from(new Uint8Array(zipBytes)),
-    targetDir,
-  });
-}
-
-// Dry-run counterparts to installModFile/installModZip — report where a
-// file would land (or which files a zip would extract) without writing
-// anything, guaranteed by the Rust side to be byte-identical to what the
-// real install would produce. Used by modActions.ts's mod-conflict check
-// to see whether an install would overwrite another mod's tracked files
-// before actually committing to it.
+// Dry-run counterpart to installModFile — reports where a file would
+// land without writing anything, guaranteed by the Rust side to be
+// byte-identical to what the real install would produce. Used by
+// modActions.ts's mod-conflict check to see whether an install would
+// overwrite another mod's tracked files before actually committing to it.
 export async function computeInstallFilePath(targetDir: string, fileName: string): Promise<string> {
   return invoke<string>("compute_install_file_path", { targetDir, fileName });
 }
 
-export async function listZipInstallPaths(zipBytes: ArrayBuffer, targetDir: string): Promise<string[]> {
-  return invoke<string[]>("list_zip_install_paths", {
-    zipBytes: Array.from(new Uint8Array(zipBytes)),
-    targetDir,
-  });
-}
-
-// Deletes previously-installed files (paths as returned by installModFile /
-// installModZip). Missing files are treated as already-gone, not an error.
+// Deletes previously-installed files (paths as returned by installModFile).
+// Missing files are treated as already-gone, not an error.
 export async function uninstallFiles(paths: string[]): Promise<void> {
   await invoke("uninstall_files", { paths });
 }
@@ -122,19 +93,6 @@ export async function listSnapshots(): Promise<SnapshotInfo[]> {
 
 export async function deleteSnapshot(fileName: string): Promise<void> {
   await invoke("delete_snapshot", { fileName });
-}
-
-export interface ZipTextEntry {
-  name: string;
-  content: string;
-}
-
-// Lists the text-decodable entries of a zip in memory (mod detail's file
-// preview) — nothing is written to disk, nothing is installed.
-export async function listZipTextEntries(zipBytes: ArrayBuffer): Promise<ZipTextEntry[]> {
-  return invoke<ZipTextEntry[]>("list_zip_text_entries", {
-    zipBytes: Array.from(new Uint8Array(zipBytes)),
-  });
 }
 
 // The auth token (API key / login session token) lives in the OS keychain

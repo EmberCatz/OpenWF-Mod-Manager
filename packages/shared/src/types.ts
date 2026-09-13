@@ -52,14 +52,23 @@ export interface Mod {
   updatedAt: string; // ISO 8601
 }
 
+// One raw .pluto/.txt file belonging to a version — each its own GitHub
+// release asset (see routes/mods.ts). fileName's extension is what decides
+// where it installs to (see apps/desktop/src/modActions.ts's
+// targetFolderForFile): .txt -> the Metadata Patches folder, .pluto -> the
+// Scripts folder.
+export interface ModVersionFile {
+  fileName: string;
+  downloadUrl: string; // GitHub release asset's browser_download_url — client fetches this directly, not through the API
+  fileSize: number; // bytes
+  checksum: string; // sha256 of the file, hex-encoded
+}
+
 export interface ModVersion {
   id: number;
   modId: string;
   version: string; // e.g. "1.2.0" or a date tag
-  fileName: string; // original uploaded filename, e.g. "Swarm.pluto" or "my-mod.zip" — determines raw-file vs zip install handling
-  downloadUrl: string; // GitHub release asset's browser_download_url — client fetches this directly, not through the API
-  fileSize: number; // bytes
-  checksum: string; // sha256 of the file, hex-encoded
+  files: ModVersionFile[]; // one or more raw .pluto/.txt files, never a zip — see ModVersionFile
   gameVersions: string[]; // GAME_VERSIONS entries this version is tagged compatible with, or ["all"]
   changelog: string | null;
   createdAt: string; // ISO 8601
@@ -83,8 +92,10 @@ export interface ModAnalytics {
 }
 
 // Request body for POST /api/mods and POST /api/mods/:id/versions.
-// The zip itself travels as multipart form data alongside this JSON blob
-// (field name "metadata"); see apps/api/src/routes/mods.ts.
+// The actual file(s) — one or more raw .pluto/.txt files, no zip — travel
+// as multipart form data alongside this JSON blob, each under a repeated
+// "files" field (field name "metadata" for this JSON itself); see
+// apps/api/src/routes/mods.ts.
 export interface UploadMetadata {
   name: string;
   // Ignored server-side — the mod's author is always set to the uploading

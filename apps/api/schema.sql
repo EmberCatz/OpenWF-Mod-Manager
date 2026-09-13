@@ -59,11 +59,8 @@ CREATE TABLE IF NOT EXISTS mod_versions (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     mod_id             TEXT NOT NULL REFERENCES mods(id) ON DELETE CASCADE,
     version            TEXT NOT NULL,           -- e.g. "1.2.0"
-    file_name          TEXT NOT NULL,           -- original uploaded filename, e.g. "Swarm.pluto" or "my-mod.zip"
-    download_url       TEXT NOT NULL,           -- GitHub release asset's browser_download_url (public, direct)
+    files              TEXT NOT NULL,           -- JSON array of {fileName, downloadUrl, fileSize, checksum} — one or more raw .pluto/.txt files, each its own GitHub release asset (never a zip — see routes/mods.ts)
     github_release_id  INTEGER NOT NULL,        -- needed to delete/replace the release later
-    file_size          INTEGER NOT NULL,        -- bytes
-    checksum           TEXT NOT NULL,           -- sha256 of the file, hex
     game_versions      TEXT NOT NULL DEFAULT '["all"]', -- JSON array of GAME_VERSIONS entries, or ["all"]
     changelog          TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),

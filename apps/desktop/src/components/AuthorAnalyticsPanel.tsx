@@ -59,9 +59,9 @@ function WeeklyBarChart({
 }
 
 // Colors match how these two metrics already read elsewhere in the app —
-// blue is the existing "download" association (button--download), gold is
-// the app's own accent (badges, active tab, highlights) — rather than
-// introducing a new palette just for this one panel.
+// blue is the existing "download" association (DownloadIcon/download
+// counts), gold is the app's own accent (badges, active tab, highlights)
+// — rather than introducing a new palette just for this one panel.
 const DOWNLOADS_COLOR = "#3d6fd6";
 const LIKES_COLOR = "#e0a339";
 

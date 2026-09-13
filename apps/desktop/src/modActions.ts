@@ -1,13 +1,6 @@
 import type { Mod, ModVersion } from "@openwf-mod-manager/shared";
 import { downloadModFile, fetchModList, recordDownload } from "./api";
-import {
-  computeInstallFilePath,
-  installModFile,
-  installModZip,
-  listZipInstallPaths,
-  pickAndWriteFile,
-  uninstallFiles,
-} from "./native";
+import { computeInstallFilePath, installModFile, uninstallFiles } from "./native";
 import { getMetadataPatchesPath, getScriptsPath } from "./settings";
 import { clearInstalled, getInstalled, listInstalled, setInstalled, type InstalledEntry } from "./installed";
 
@@ -91,34 +84,42 @@ function reconcileOverwrittenMods(conflicts: Conflict[]): void {
   }
 }
 
-// Shared between Browse and ModDetail so install/uninstall/download logic
-// (and the installed-state bookkeeping that goes with it) lives in one place.
+// Shared between Browse and ModDetail so install/uninstall logic (and the
+// installed-state bookkeeping that goes with it) lives in one place.
 
-export function canAutoInstall(category: string): boolean {
-  return category === "metadata-patch" || category === "pluto-script";
-}
-
-export function targetFolderFor(category: string): string | null {
-  if (category === "metadata-patch") return getMetadataPatchesPath();
-  if (category === "pluto-script") return getScriptsPath();
+// Every mod file is a raw .pluto/.txt now, so where it installs to is a
+// property of the *file*, not the mod's category — a version can mix
+// both extensions and have its files land in two different folders in
+// one install. Returns null for anything else (shouldn't happen — the API
+// only ever stores these two extensions).
+export function targetFolderForFile(fileName: string): string | null {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
+  if (ext === ".txt") return getMetadataPatchesPath();
+  if (ext === ".pluto") return getScriptsPath();
   return null;
 }
 
-// Downloads + installs the given version, updating the installed-state
-// tracker. If a different version of this mod is already installed, its
-// old files are removed first so switching versions doesn't leave stale
-// files from the previous one sitting alongside the new ones.
+// Downloads + installs every file in the given version, updating the
+// installed-state tracker. If a different version of this mod is already
+// installed, its old files are removed first so switching versions
+// doesn't leave stale files from the previous one sitting alongside the
+// new ones.
 //
 // Before writing anything, checks whether the files this install is about
 // to write already belong to a *different* installed mod (two cosmetic
-// mods for the same slot, say) — via the Rust-side dry-run commands, which
-// are guaranteed to compute the exact same paths the real install would
+// mods for the same slot, say) — via the Rust-side dry-run command, which
+// is guaranteed to compute the exact same path the real install would
 // (see commands.rs). Throws ModConflictError rather than proceeding,
 // unless `force` is set — the caller's job is to catch that specifically
 // and offer the user a choice, not to silently overwrite.
 export async function installVersion(mod: Mod, version: ModVersion, options?: { force?: boolean }): Promise<string> {
-  const targetFolder = targetFolderFor(mod.category);
-  if (!targetFolder) throw new Error("Set the matching folder in Settings first");
+  if (version.files.length === 0) throw new Error("This version has no files");
+
+  const targets = version.files.map((file) => {
+    const folder = targetFolderForFile(file.fileName);
+    if (!folder) throw new Error(`Set the matching folder in Settings first (for '${file.fileName}')`);
+    return { file, folder };
+  });
 
   if (!options?.force && mod.conflictsWithModIds.length > 0) {
     const installedIds = new Set(listInstalled().map((e) => e.modId));
@@ -129,12 +130,11 @@ export async function installVersion(mod: Mod, version: ModVersion, options?: { 
     }
   }
 
-  const isZip = version.fileName.toLowerCase().endsWith(".zip");
-  const bytes = await downloadModFile(version.downloadUrl);
+  const downloaded = await Promise.all(
+    targets.map(async ({ file, folder }) => ({ file, folder, bytes: await downloadModFile(file.downloadUrl) }))
+  );
 
-  const wouldBePaths = isZip
-    ? await listZipInstallPaths(bytes, targetFolder)
-    : [await computeInstallFilePath(targetFolder, version.fileName)];
+  const wouldBePaths = await Promise.all(downloaded.map(({ file, folder }) => computeInstallFilePath(folder, file.fileName)));
   const conflicts = findConflicts(mod.id, wouldBePaths);
   if (conflicts.length > 0 && !options?.force) {
     throw new ModConflictError(conflicts.map((c) => ({ modName: c.entry.modName, paths: c.paths })));
@@ -146,7 +146,9 @@ export async function installVersion(mod: Mod, version: ModVersion, options?: { 
   }
 
   recordDownload(mod.id); // best-effort popularity counter, doesn't block install
-  const installedFiles = isZip ? await installModZip(bytes, targetFolder) : [await installModFile(bytes, targetFolder, version.fileName)];
+  const installedFiles = await Promise.all(
+    downloaded.map(({ file, folder, bytes }) => installModFile(bytes, folder, file.fileName))
+  );
 
   setInstalled({
     modId: mod.id,
@@ -172,17 +174,6 @@ export async function installVersion(mod: Mod, version: ModVersion, options?: { 
   }
 
   return `Installed ${installedFiles.length} file(s)${requiresNote}`;
-}
-
-// Plain save-to-location download, no install bookkeeping — for "other"
-// category mods (no defined install location) or deliberately grabbing
-// the raw file. Returns null if the user cancelled the save dialog.
-export async function downloadVersion(version: ModVersion): Promise<string | null> {
-  const bytes = await downloadModFile(version.downloadUrl);
-  const savedPath = await pickAndWriteFile(version.fileName, bytes);
-  if (!savedPath) return null;
-  recordDownload(version.modId); // best-effort popularity counter, doesn't block the save
-  return "Saved";
 }
 
 export async function uninstallMod(modId: string): Promise<void> {

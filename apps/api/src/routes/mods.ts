@@ -13,6 +13,7 @@ import type {
   LikeSummary,
   Mod,
   ModVersion,
+  ModVersionFile,
   ModWithVersions,
   UpdateModMetadata,
   UploadMetadata,
@@ -61,11 +62,13 @@ const COMMENT_VOTE_WINDOW_SECONDS = 10 * 60;
 const DOWNLOAD_COUNT_LIMIT = 60;
 const DOWNLOAD_COUNT_WINDOW_SECONDS = 10 * 60;
 
-// Single-file mods (the common case) upload a raw .pluto/.txt directly —
-// no zip/extraction step. .zip is still accepted for mods that need more
-// than one file (e.g. a script with a companion data file, see
-// docs/pluto-scripting-guide.md).
-const ALLOWED_EXTENSIONS = [".zip", ".pluto", ".txt"];
+// Every mod file is a raw .pluto/.txt, uploaded directly — no zip. A
+// version that needs several files (a script with a companion data file,
+// say) just uploads more than one; see MAX_FILES_PER_VERSION below.
+const ALLOWED_EXTENSIONS = [".pluto", ".txt"];
+// Generous headroom over any real mod's file count — mirrors
+// MAX_SCREENSHOTS's reasoning, not a sizing assumption.
+const MAX_FILES_PER_VERSION = 10;
 
 function slugify(name: string): string {
   return name
@@ -86,24 +89,76 @@ function fileExtension(name: string): string {
 }
 
 // Extension checks alone accept any bytes as long as the filename ends in
-// .zip/.pluto/.txt — a renamed binary (an .exe, say) sails straight through
-// and gets redistributed via a public GitHub Release URL. This sniffs the
-// actual content against what the extension claims: a real zip signature
-// for .zip, valid UTF-8 text for the plain-text script extensions. Not a
+// .pluto/.txt — a renamed binary (an .exe, say) sails straight through and
+// gets redistributed via a public GitHub Release URL. This sniffs the
+// actual content: valid UTF-8 text, same as the extension claims. Not a
 // full antivirus scan — just closes the specific rename trick.
-const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]; // "PK\x03\x04", the zip local-file-header signature
-
-async function looksLikeValidUpload(file: File, extension: string): Promise<boolean> {
-  if (extension === ".zip") {
-    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-    return ZIP_MAGIC.every((b, i) => head[i] === b);
-  }
+async function looksLikeValidUpload(file: File): Promise<boolean> {
   try {
     new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(await file.arrayBuffer());
     return true;
   } catch {
     return false;
   }
+}
+
+// Reads and validates the (possibly repeated) multipart "files" field —
+// one or more raw .pluto/.txt files, no zip. Shared by POST / and POST
+// /:id/versions so the two upload paths can't drift apart. Hono's
+// parseBody({ all: true }) returns an array only when the key repeats, so
+// a single file still needs normalizing into one.
+async function validateUploadedFiles(
+  form: Record<string, string | File | (string | File)[]>
+): Promise<{ ok: true; files: File[] } | { ok: false; error: string; status: 400 | 413 }> {
+  const raw = form["files"];
+  const files = (raw === undefined ? [] : Array.isArray(raw) ? raw : [raw]).filter((f): f is File => f instanceof File);
+
+  if (files.length === 0) return { ok: false, error: "expected at least one multipart 'files' field", status: 400 };
+  if (files.length > MAX_FILES_PER_VERSION) {
+    return { ok: false, error: `at most ${MAX_FILES_PER_VERSION} files per version`, status: 400 };
+  }
+
+  const seenNames = new Set<string>();
+  for (const file of files) {
+    if (file.size === 0) return { ok: false, error: `'${file.name}' is empty (0 bytes)`, status: 400 };
+    if (file.size > MAX_FILE_BYTES) return { ok: false, error: `'${file.name}' exceeds ${MAX_FILE_BYTES} byte limit`, status: 413 };
+    if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
+      return { ok: false, error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted (got '${file.name}')`, status: 400 };
+    }
+    if (!(await looksLikeValidUpload(file))) {
+      return { ok: false, error: `'${file.name}' content doesn't match its extension`, status: 400 };
+    }
+    const key = file.name.toLowerCase();
+    if (seenNames.has(key)) return { ok: false, error: `duplicate file name in this upload: '${file.name}'`, status: 400 };
+    seenNames.add(key);
+  }
+
+  return { ok: true, files };
+}
+
+// Uploads every validated file as its own asset on the same release (one
+// release per version, same as before — just potentially several assets
+// on it now instead of exactly one). assetName is index-prefixed so two
+// files can never collide as GitHub asset names even though
+// validateUploadedFiles already rejects duplicate names within one
+// upload — this doesn't depend on that check holding.
+async function uploadVersionFiles(
+  env: Env,
+  uploadUrl: string,
+  modId: string,
+  version: string,
+  files: File[]
+): Promise<ModVersionFile[]> {
+  const out: ModVersionFile[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const buf = await file.arrayBuffer();
+    const checksum = await sha256HexOf(buf);
+    const assetName = `${modId}-${version}-${i}-${file.name}`;
+    const asset = await uploadReleaseAsset(env, uploadUrl, assetName, buf);
+    out.push({ fileName: file.name, downloadUrl: asset.browserDownloadUrl, fileSize: file.size, checksum });
+  }
+  return out;
 }
 
 // Thumbnails/screenshots are external links only — this project never
@@ -258,10 +313,7 @@ export function rowToVersion(row: any): ModVersion {
     id: row.id,
     modId: row.mod_id,
     version: row.version,
-    fileName: row.file_name,
-    downloadUrl: row.download_url,
-    fileSize: row.file_size,
-    checksum: row.checksum,
+    files: JSON.parse(row.files ?? "[]"),
     gameVersions: JSON.parse(row.game_versions ?? '["all"]'),
     changelog: row.changelog,
     createdAt: row.created_at,
@@ -320,7 +372,7 @@ export const AGGREGATE_COLUMNS = `
 // GET /mine, and routes/modders.ts's public profile) — each row is a mod
 // LEFT JOINed to just its newest version (v_id NULL when it has none yet).
 export const LATEST_VERSION_JOIN_COLUMNS =
-  "v.id as v_id, v.version, v.file_name, v.download_url, v.file_size, v.checksum, v.game_versions, v.changelog, v.created_at as v_created_at";
+  "v.id as v_id, v.version, v.files, v.game_versions, v.changelog, v.created_at as v_created_at";
 
 export function rowToModWithLatestVersion(row: any): ModWithVersions {
   return {
@@ -331,10 +383,7 @@ export function rowToModWithLatestVersion(row: any): ModWithVersions {
             id: row.v_id,
             mod_id: row.id,
             version: row.version,
-            file_name: row.file_name,
-            download_url: row.download_url,
-            file_size: row.file_size,
-            checksum: row.checksum,
+            files: row.files,
             game_versions: row.game_versions,
             changelog: row.changelog,
             created_at: row.v_created_at,
@@ -629,11 +678,11 @@ mods.get("/:id/analytics", async (c) => {
 });
 
 // POST /api/mods — create a new mod + its first version.
-// multipart/form-data: "file" (.zip, .pluto, or .txt), "metadata" (JSON
-// body matching UploadMetadata). Requires a modder API key (see auth.ts)
-// so uploads can't be spammed anonymously — the file is pushed to a
-// GitHub Release, which has no billing surface at all, so the only real
-// cost of abuse here is repo clutter, not money.
+// multipart/form-data: one or more "files" fields (.pluto/.txt, no zip),
+// "metadata" (JSON body matching UploadMetadata). Requires a modder API
+// key (see auth.ts) so uploads can't be spammed anonymously — the
+// file(s) are pushed to a GitHub Release, which has no billing surface at
+// all, so the only real cost of abuse here is repo clutter, not money.
 mods.post("/", async (c) => {
   const modder = await authenticate(c);
   if (!modder) return c.json({ error: "unauthorized" }, 401);
@@ -644,24 +693,14 @@ mods.post("/", async (c) => {
   const allowed = await checkRateLimit(c, "mod_upload", modder.id, UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS);
   if (!allowed) return c.json({ error: "too many uploads from this account — wait a bit and try again" }, 429);
 
-  const form = await c.req.parseBody();
-  const file = form["file"];
+  const form = await c.req.parseBody({ all: true });
   const metadataRaw = form["metadata"];
-  if (!(file instanceof File) || typeof metadataRaw !== "string") {
-    return c.json({ error: "expected multipart fields 'file' and 'metadata'" }, 400);
+  if (typeof metadataRaw !== "string") {
+    return c.json({ error: "expected a multipart 'metadata' field" }, 400);
   }
-  if (file.size === 0) {
-    return c.json({ error: "uploaded file is empty (0 bytes)" }, 400);
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return c.json({ error: `file exceeds ${MAX_FILE_BYTES} byte limit` }, 413);
-  }
-  if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
-    return c.json({ error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted` }, 400);
-  }
-  if (!(await looksLikeValidUpload(file, fileExtension(file.name)))) {
-    return c.json({ error: "file content doesn't match its extension" }, 400);
-  }
+  const filesResult = await validateUploadedFiles(form);
+  if (!filesResult.ok) return c.json({ error: filesResult.error }, filesResult.status);
+  const files = filesResult.files;
 
   let metadata: UploadMetadata;
   try {
@@ -745,12 +784,8 @@ mods.post("/", async (c) => {
     return c.json({ error: `mod '${modId}' already exists — use POST /api/mods/${modId}/versions` }, 409);
   }
 
-  const buf = await file.arrayBuffer();
-  const checksum = await sha256HexOf(buf);
-  const assetName = `${modId}-${metadata.version}${fileExtension(file.name)}`;
-
   const release = await createRelease(c.env, modId, metadata.version, metadata.changelog);
-  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, assetName, buf);
+  const versionFiles = await uploadVersionFiles(c.env, release.uploadUrl, modId, metadata.version, files);
 
   const now = new Date().toISOString();
   try {
@@ -781,27 +816,16 @@ mods.post("/", async (c) => {
         now
       ),
       c.env.DB.prepare(
-        `INSERT INTO mod_versions (mod_id, version, file_name, download_url, github_release_id, file_size, checksum, game_versions, changelog, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        modId,
-        metadata.version,
-        file.name,
-        asset.browserDownloadUrl,
-        release.id,
-        file.size,
-        checksum,
-        JSON.stringify(gameVersions),
-        metadata.changelog ?? null,
-        now
-      ),
+        `INSERT INTO mod_versions (mod_id, version, files, github_release_id, game_versions, changelog, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(modId, metadata.version, JSON.stringify(versionFiles), release.id, JSON.stringify(gameVersions), metadata.changelog ?? null, now),
     ]);
   } catch (e) {
     await deleteReleaseBestEffort(c.env, release.id);
     throw e;
   }
 
-  return c.json({ id: modId, downloadUrl: asset.browserDownloadUrl }, 201);
+  return c.json({ id: modId }, 201);
 });
 
 // POST /api/mods/:id/versions — add a new version to an existing mod.
@@ -823,24 +847,14 @@ mods.post("/:id/versions", async (c) => {
   if (!modRow) return c.json({ error: "not found" }, 404);
   if (modRow.owner_id !== modder.id) return c.json({ error: "forbidden — not the owner of this mod" }, 403);
 
-  const form = await c.req.parseBody();
-  const file = form["file"];
+  const form = await c.req.parseBody({ all: true });
   const metadataRaw = form["metadata"];
-  if (!(file instanceof File) || typeof metadataRaw !== "string") {
-    return c.json({ error: "expected multipart fields 'file' and 'metadata'" }, 400);
+  if (typeof metadataRaw !== "string") {
+    return c.json({ error: "expected a multipart 'metadata' field" }, 400);
   }
-  if (file.size === 0) {
-    return c.json({ error: "uploaded file is empty (0 bytes)" }, 400);
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return c.json({ error: `file exceeds ${MAX_FILE_BYTES} byte limit` }, 413);
-  }
-  if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
-    return c.json({ error: `only ${ALLOWED_EXTENSIONS.join(", ")} uploads are accepted` }, 400);
-  }
-  if (!(await looksLikeValidUpload(file, fileExtension(file.name)))) {
-    return c.json({ error: "file content doesn't match its extension" }, 400);
-  }
+  const filesResult = await validateUploadedFiles(form);
+  if (!filesResult.ok) return c.json({ error: filesResult.error }, filesResult.status);
+  const files = filesResult.files;
 
   let metadata: Pick<UploadMetadata, "version" | "changelog" | "gameVersions">;
   try {
@@ -860,31 +874,16 @@ mods.post("/:id/versions", async (c) => {
     return c.json({ error: `version '${metadata.version}' already exists for this mod` }, 409);
   }
 
-  const buf = await file.arrayBuffer();
-  const checksum = await sha256HexOf(buf);
-  const assetName = `${modId}-${metadata.version}${fileExtension(file.name)}`;
-
   const release = await createRelease(c.env, modId, metadata.version, metadata.changelog);
-  const asset = await uploadReleaseAsset(c.env, release.uploadUrl, assetName, buf);
+  const versionFiles = await uploadVersionFiles(c.env, release.uploadUrl, modId, metadata.version, files);
 
   const now = new Date().toISOString();
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO mod_versions (mod_id, version, file_name, download_url, github_release_id, file_size, checksum, game_versions, changelog, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        modId,
-        metadata.version,
-        file.name,
-        asset.browserDownloadUrl,
-        release.id,
-        file.size,
-        checksum,
-        JSON.stringify(gameVersions),
-        metadata.changelog ?? null,
-        now
-      ),
+        `INSERT INTO mod_versions (mod_id, version, files, github_release_id, game_versions, changelog, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(modId, metadata.version, JSON.stringify(versionFiles), release.id, JSON.stringify(gameVersions), metadata.changelog ?? null, now),
       c.env.DB.prepare("UPDATE mods SET updated_at = ? WHERE id = ?").bind(now, modId),
     ]);
   } catch (e) {
@@ -892,7 +891,7 @@ mods.post("/:id/versions", async (c) => {
     throw e;
   }
 
-  return c.json({ id: modId, version: metadata.version, downloadUrl: asset.browserDownloadUrl }, 201);
+  return c.json({ id: modId, version: metadata.version }, 201);
 });
 
 // DELETE /api/mods/:id/versions/:version — remove a single version.

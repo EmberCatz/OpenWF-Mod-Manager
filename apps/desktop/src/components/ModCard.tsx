@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { ALL_VERSIONS_TAG, type ModVersion, type ModWithVersions } from "@openwf-mod-manager/shared";
 import { toggleLike } from "../api";
-import { canAutoInstall, downloadVersion, DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
+import { DeclaredConflictError, installVersion, ModConflictError, uninstallMod } from "../modActions";
 import { getInstalled } from "../installed";
 import { getReviewerId } from "../reviewerId";
 import { isLiked, setLiked } from "../likedMods";
@@ -75,10 +75,9 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
   const { requestConfirm: requestDeclaredConfirm, modal: declaredConflictModal } = useDeclaredConflictConfirm();
 
   const version = mod.versions[0];
-  const autoInstallable = canAutoInstall(mod.category);
   const installedEntry = getInstalled(mod.id);
   const isUpToDate = !!installedEntry && !!version && installedEntry.version === version.version;
-  const installLabel = autoInstallable ? (isUpToDate ? "Reinstall" : installedEntry ? "Update" : "Install") : "Download";
+  const installLabel = isUpToDate ? "Reinstall" : installedEntry ? "Update" : "Install";
   const hasThumb = !!mod.thumbnailUrl && !thumbBroken;
 
   async function performInstall(v: ModVersion, force: boolean) {
@@ -117,19 +116,6 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
     }
   }
 
-  async function handleDownload() {
-    if (!version) return;
-    setBusy(true);
-    try {
-      const message = await downloadVersion(version);
-      if (message) toast.success(`${mod.name}: ${message}`);
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleUninstall() {
     setBusy(true);
     try {
@@ -153,8 +139,6 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
       toast.error(String(e));
     }
   }
-
-  const onInstallOrDownload = () => (autoInstallable ? handleInstall() : handleDownload());
 
   const likeButton = <LikeButton liked={liked} count={likeCount} size="sm" onToggle={handleToggleLike} />;
 
@@ -215,15 +199,15 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
                           <RefreshIcon className="btn-icon" /> Reinstall
                         </>
                       ),
-                      onClick: onInstallOrDownload,
+                      onClick: handleInstall,
                     },
                   ]}
                 />
               ) : (
                 <button
-                  className={`button ${installedEntry ? "button--update" : autoInstallable ? "button--install" : "button--download"}`}
+                  className={`button ${installedEntry ? "button--update" : "button--install"}`}
                   disabled={busy}
-                  onClick={onInstallOrDownload}
+                  onClick={handleInstall}
                 >
                   {busy && <span className="spinner" />}
                   {busy ? "Working…" : installLabel}
@@ -300,18 +284,16 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
             {version && <span className="mod-card__version">v{version.version}</span>}
             {version && (
               <button
-                className={`button button--lg ${
-                  isUpToDate ? "button--reinstall" : installedEntry ? "button--update" : autoInstallable ? "button--install" : "button--download"
-                }`}
+                className={`button button--lg ${isUpToDate ? "button--reinstall" : installedEntry ? "button--update" : "button--install"}`}
                 disabled={busy}
-                onClick={onInstallOrDownload}
+                onClick={handleInstall}
               >
                 {busy && <span className="spinner" />}
                 {!busy && isUpToDate && <RefreshIcon className="btn-icon" />}
                 {busy ? "Working…" : installLabel}
               </button>
             )}
-            {autoInstallable && installedEntry && isUpToDate && (
+            {installedEntry && isUpToDate && (
               <button className="button button--lg button--danger" disabled={busy} onClick={handleUninstall}>
                 <TrashIcon className="btn-icon" /> Uninstall
               </button>

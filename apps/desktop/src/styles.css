@@ -260,18 +260,6 @@ textarea {
   border-color: var(--accent-hover);
 }
 
-.button--download {
-  background: #3d6fd6;
-  border-color: #3d6fd6;
-  color: #eaf1ff;
-  font-weight: 600;
-}
-
-.button--download:hover:not(:disabled) {
-  background: #5c8aec;
-  border-color: #5c8aec;
-}
-
 .button--install {
   background: #2e9e5b;
   border-color: #2e9e5b;
@@ -734,6 +722,13 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+.upload-picked-files {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* --- Settings: left nav + right panel --- */
 
 .settings-layout {
@@ -1057,6 +1052,13 @@ textarea {
   height: 14px;
 }
 
+.version-history__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+}
+
 .version-history__changelog {
   color: var(--muted);
   margin: 0.5rem 0 0;
@@ -1322,28 +1324,6 @@ textarea {
 }
 
 /* --- File preview (fullscreen-only modal — see components/FilePreview.tsx) --- */
-
-.file-preview__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-bottom: 0.4rem;
-}
-
-.file-preview__tab {
-  background: var(--panel-alt);
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.78rem;
-  cursor: pointer;
-}
-
-.file-preview__tab--active {
-  color: var(--text);
-  border-color: var(--accent);
-}
 
 .file-preview__body {
   background: #101216;

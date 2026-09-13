@@ -86,8 +86,8 @@ export async function fetchModAnalytics(modId: string, apiKey: string): Promise<
   return res.json();
 }
 
-// Downloads a mod version's file (.pluto, .txt, or .zip) straight from its
-// GitHub release asset URL — this never touches the Worker API. Uses the
+// Downloads a single mod file (.pluto or .txt) straight from its GitHub
+// release asset URL — this never touches the Worker API. Uses the
 // Tauri HTTP plugin rather than the webview's fetch so it isn't subject to
 // browser CORS restrictions against GitHub's asset-hosting origin.
 export async function downloadModFile(downloadUrl: string): Promise<ArrayBuffer> {
@@ -97,9 +97,16 @@ export async function downloadModFile(downloadUrl: string): Promise<ArrayBuffer>
   return res.arrayBuffer();
 }
 
-async function postMultipart<T>(path: string, metadata: unknown, fileBytes: Uint8Array, fileName: string, apiKey: string): Promise<T> {
+async function postMultipart<T>(
+  path: string,
+  metadata: unknown,
+  files: { fileName: string; bytes: Uint8Array }[],
+  apiKey: string
+): Promise<T> {
   const form = new FormData();
-  form.append("file", new Blob([fileBytes as BlobPart], { type: "application/octet-stream" }), fileName);
+  for (const f of files) {
+    form.append("files", new Blob([f.bytes as BlobPart], { type: "text/plain" }), f.fileName);
+  }
   form.append("metadata", JSON.stringify(metadata));
 
   const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
@@ -125,8 +132,12 @@ async function postMultipart<T>(path: string, metadata: unknown, fileBytes: Uint
 
 // Creates a new mod + its first version. Fails 409 if a mod with the same
 // (slugified) name already exists — use addModVersion for that case.
-export async function uploadNewMod(metadata: UploadMetadata, fileBytes: Uint8Array, fileName: string, apiKey: string): Promise<{ id: string; downloadUrl: string }> {
-  return postMultipart("/api/mods", metadata, fileBytes, fileName, apiKey);
+export async function uploadNewMod(
+  metadata: UploadMetadata,
+  files: { fileName: string; bytes: Uint8Array }[],
+  apiKey: string
+): Promise<{ id: string }> {
+  return postMultipart("/api/mods", metadata, files, apiKey);
 }
 
 // Adds a new version to an existing mod. Fails 403 if apiKey doesn't
@@ -134,11 +145,10 @@ export async function uploadNewMod(metadata: UploadMetadata, fileBytes: Uint8Arr
 export async function addModVersion(
   modId: string,
   metadata: Pick<UploadMetadata, "version" | "changelog" | "gameVersions">,
-  fileBytes: Uint8Array,
-  fileName: string,
+  files: { fileName: string; bytes: Uint8Array }[],
   apiKey: string
-): Promise<{ id: string; version: string; downloadUrl: string }> {
-  return postMultipart(`/api/mods/${modId}/versions`, metadata, fileBytes, fileName, apiKey);
+): Promise<{ id: string; version: string }> {
+  return postMultipart(`/api/mods/${modId}/versions`, metadata, files, apiKey);
 }
 
 async function authedDelete(path: string, apiKey: string, reauthToken?: string): Promise<void> {

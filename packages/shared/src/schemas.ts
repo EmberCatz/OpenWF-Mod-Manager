@@ -14,14 +14,18 @@ import { z } from "zod";
 
 export const ModCategorySchema = z.enum(["metadata-patch", "pluto-script", "other"]);
 
-export const ModVersionSchema = z.object({
-  id: z.number(),
-  modId: z.string(),
-  version: z.string(),
+export const ModVersionFileSchema = z.object({
   fileName: z.string(),
   downloadUrl: z.string(),
   fileSize: z.number(),
   checksum: z.string(),
+});
+
+export const ModVersionSchema = z.object({
+  id: z.number(),
+  modId: z.string(),
+  version: z.string(),
+  files: z.array(ModVersionFileSchema),
   gameVersions: z.array(z.string()),
   changelog: z.string().nullable(),
   createdAt: z.string(),

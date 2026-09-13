@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ModCategory, ModWithVersions } from "@openwf-mod-manager/shared";
 import { ALL_VERSIONS_TAG, DEFAULT_MOD_THEMES } from "@openwf-mod-manager/shared";
 import { addModVersion, fetchModList, uploadNewMod } from "../api";
-import { pickAndReadModFile } from "../native";
+import { pickModFiles } from "../native";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
 import { toast } from "../toast";
@@ -48,7 +48,7 @@ export default function Upload() {
   const [updateChangelog, setUpdateChangelog] = useState("");
   const [gameVersions, setGameVersions] = useState<string[]>([ALL_VERSIONS_TAG]);
 
-  const [pickedFile, setPickedFile] = useState<{ fileName: string; bytes: Uint8Array } | null>(null);
+  const [pickedFiles, setPickedFiles] = useState<{ fileName: string; bytes: Uint8Array }[]>([]);
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "error"; message?: string }>({ kind: "idle" });
 
   useEffect(() => {
@@ -77,14 +77,15 @@ export default function Upload() {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  async function pickFile() {
-    const picked = await pickAndReadModFile();
-    if (!picked) return;
-    if (picked.bytes.length === 0) {
-      toast.error(`'${picked.fileName}' is empty (0 bytes) — pick a different file`);
+  async function pickFiles() {
+    const picked = await pickModFiles();
+    if (picked.length === 0) return;
+    const empty = picked.find((f) => f.bytes.length === 0);
+    if (empty) {
+      toast.error(`'${empty.fileName}' is empty (0 bytes) — pick a different file`);
       return;
     }
-    setPickedFile(picked);
+    setPickedFiles(picked);
   }
 
   async function submit() {
@@ -93,15 +94,13 @@ export default function Upload() {
       toast.error("Set your API key in Settings first");
       return;
     }
-    if (!pickedFile) {
-      toast.error("Pick a mod file first");
+    if (pickedFiles.length === 0) {
+      toast.error("Pick at least one mod file first");
       return;
     }
 
     setStatus({ kind: "working" });
     try {
-      const { fileName, bytes } = pickedFile;
-
       if (mode === "new") {
         if (!newModForm.name || !newModForm.version || !newModForm.theme) {
           toast.error("Name, version, and category are required");
@@ -134,14 +133,13 @@ export default function Upload() {
             requiresModIds: newModForm.requiresModIds.length > 0 ? newModForm.requiresModIds : undefined,
             conflictsWithModIds: newModForm.conflictsWithModIds.length > 0 ? newModForm.conflictsWithModIds : undefined,
           },
-          bytes,
-          fileName,
+          pickedFiles,
           apiKey
         );
         setStatus({ kind: "done", message: `Uploaded as '${result.id}'` });
         setNewModForm(initialNewModForm);
         setGameVersions([ALL_VERSIONS_TAG]);
-        setPickedFile(null);
+        setPickedFiles([]);
       } else {
         if (!selectedModId || !updateVersion) {
           toast.error("Pick a mod and a version number");
@@ -151,15 +149,14 @@ export default function Upload() {
         const result = await addModVersion(
           selectedModId,
           { version: updateVersion, changelog: updateChangelog || undefined, gameVersions },
-          bytes,
-          fileName,
+          pickedFiles,
           apiKey
         );
         setStatus({ kind: "done", message: `Added v${result.version} to '${result.id}'` });
         setUpdateVersion("1.0.0");
         setUpdateChangelog("");
         setGameVersions([ALL_VERSIONS_TAG]);
-        setPickedFile(null);
+        setPickedFiles([]);
       }
     } catch (e) {
       toast.error(String(e));
@@ -351,16 +348,24 @@ export default function Upload() {
         )}
 
         <div className="upload-card">
-          <h4 className="upload-card__title">File</h4>
-          <span className="hint">Pick one file, or select multiple at once to bundle them into a single zip.</span>
+          <h4 className="upload-card__title">Files</h4>
+          <span className="hint">One or more raw .pluto/.txt files — no zip. Each installs to its own folder by extension.</span>
           <div className="field__row">
-            <button className="button" onClick={pickFile}>Choose file(s)…</button>
+            <button className="button" onClick={pickFiles}>Choose file(s)…</button>
             <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
               {status.kind === "working" && <span className="spinner" />}
               {status.kind === "working" ? "Uploading…" : "Upload"}
             </button>
           </div>
-          <span className="muted">{pickedFile ? pickedFile.fileName : "No file chosen"}</span>
+          {pickedFiles.length === 0 ? (
+            <span className="muted">No files chosen</span>
+          ) : (
+            <ul className="upload-picked-files">
+              {pickedFiles.map((f) => (
+                <li key={f.fileName}>{f.fileName}</li>
+              ))}
+            </ul>
+          )}
           {status.kind === "done" && status.message && <p className="fade-in muted">{status.message}</p>}
         </div>
       </div>

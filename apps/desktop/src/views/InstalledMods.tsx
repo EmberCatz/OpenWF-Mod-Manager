@@ -23,10 +23,8 @@ interface OrphanFile {
   path: string;
   folderLabel: string;
   // Best-effort guess at what this file actually is, by matching its exact
-  // filename against every known mod's latest-version fileName. Only ever
-  // finds raw single-file mods this way (a zip's own fileName is the zip's
-  // name, not the names of what's inside it, so extracted zip contents
-  // never match) — good enough for the common case, see modActions.ts.
+  // filename against every known mod's latest version's own file names —
+  // see modActions.ts.
   match: { mod: ModWithVersions; version: ModVersion } | null;
 }
 
@@ -178,7 +176,7 @@ export default function InstalledMods() {
           let match: OrphanFile["match"] = null;
           for (const mod of modsById.values()) {
             const version = mod.versions[0];
-            if (version && version.fileName.toLowerCase() === baseName) {
+            if (version && version.files.some((f) => f.fileName.toLowerCase() === baseName)) {
               match = { mod, version };
               break;
             }
