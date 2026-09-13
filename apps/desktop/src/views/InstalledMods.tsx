@@ -42,6 +42,7 @@ export default function InstalledMods() {
   const [error, setError] = useState<string | null>(null);
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmingUninstallAll, setConfirmingUninstallAll] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [orphanState, setOrphanState] = useState<OrphanState>("idle");
   const [orphanBusy, setOrphanBusy] = useState<string | null>(null);
@@ -120,6 +121,20 @@ export default function InstalledMods() {
       // the same install folder isn't worth the speedup.
       for (const row of rows) {
         if (row.isOutdated && row.mod) await handleUpdateOrReinstall(row);
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleUninstallAll() {
+    if (!rows) return;
+    setConfirmingUninstallAll(false);
+    setBulkBusy(true);
+    try {
+      // Sequential, same reasoning as handleUpdateAll.
+      for (const row of rows) {
+        await handleUninstall(row);
       }
     } finally {
       setBulkBusy(false);
@@ -236,6 +251,26 @@ export default function InstalledMods() {
           <button className="button button--update" disabled={bulkBusy} onClick={handleUpdateAll}>
             {bulkBusy && <span className="spinner" />} Update all
           </button>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="installed-mods__banner">
+          {confirmingUninstallAll ? (
+            <>
+              <span className="error">Uninstall all {rows.length} mod{rows.length === 1 ? "" : "s"}? This can't be undone.</span>
+              <button className="button button--danger" disabled={bulkBusy} onClick={handleUninstallAll}>
+                {bulkBusy && <span className="spinner" />} Confirm
+              </button>
+              <button className="button" disabled={bulkBusy} onClick={() => setConfirmingUninstallAll(false)}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="button button--danger" disabled={bulkBusy} onClick={() => setConfirmingUninstallAll(true)}>
+              <TrashIcon className="btn-icon" /> Uninstall all
+            </button>
+          )}
         </div>
       )}
 
