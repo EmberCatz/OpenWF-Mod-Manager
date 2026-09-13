@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { pickFolder } from "../native";
+import {
+  deleteSnapshot,
+  listSnapshots,
+  pickFolder,
+  restoreSnapshot,
+  snapshotInstallFolders,
+  type SnapshotFolder,
+  type SnapshotInfo,
+} from "../native";
 import {
   DEFAULT_BOOTSTRAPPER_PORT,
   DEFAULT_WEBUI_PORT,
@@ -24,26 +32,41 @@ import {
 import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
 import { deleteAccount, login, logout, signup, updateAvatar, updateGithubUrl } from "../api";
 import { useAccount } from "../useAccount";
-import { TrashIcon } from "../icons";
+import { RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import Avatar from "../components/Avatar";
 
 type AuthMode = "login" | "signup";
 type AuthStatus = { kind: "idle" | "working" };
-type Section = "folders" | "live" | "account" | "about";
+type Section = "folders" | "live" | "backups" | "account" | "about";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "folders", label: "Install Folders" },
   { id: "live", label: "Live Tabs" },
+  { id: "backups", label: "Backups" },
   { id: "account", label: "Account" },
   { id: "about", label: "About / Disclaimer" },
 ];
+
+function formatSnapshotDate(ms: number): string {
+  return ms > 0 ? new Date(ms).toLocaleString() : "unknown time";
+}
+
+function formatSnapshotSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function Settings() {
   const [section, setSection] = useState<Section>("folders");
   const [metadataPatchesPath, setMetadataPatchesPathState] = useState(getMetadataPatchesPath() ?? "");
   const [scriptsPath, setScriptsPathState] = useState(getScriptsPath() ?? "");
   const [saved, setSaved] = useState(false);
+
+  const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
+  const [snapshotBusy, setSnapshotBusy] = useState<string | null>(null); // "create", or the file name being restored/deleted
+  const [confirmingRestore, setConfirmingRestore] = useState<string | null>(null);
 
   const [bootstrapperPort, setBootstrapperPortState] = useState(String(getBootstrapperPort()));
   const [webuiPort, setWebuiPortState] = useState(String(getWebuiPort()));
@@ -64,6 +87,74 @@ export default function Settings() {
   useEffect(() => {
     setGithubUrlInput(account?.githubUrl ?? "");
   }, [account?.githubUrl]);
+
+  useEffect(() => {
+    if (section === "backups") loadSnapshots();
+  }, [section]);
+
+  function currentInstallFolders(): SnapshotFolder[] {
+    return [
+      { label: "Metadata Patches", path: getMetadataPatchesPath() },
+      { label: "Scripts", path: getScriptsPath() },
+    ].filter((f): f is SnapshotFolder => !!f.path);
+  }
+
+  function loadSnapshots() {
+    listSnapshots()
+      .then(setSnapshots)
+      .catch((e) => {
+        toast.error(String(e));
+        setSnapshots([]);
+      });
+  }
+
+  async function handleCreateSnapshot() {
+    const folders = currentInstallFolders();
+    if (folders.length === 0) {
+      toast.error("Set your install folders in Settings first");
+      return;
+    }
+    setSnapshotBusy("create");
+    try {
+      await snapshotInstallFolders(folders);
+      toast.success("Backup created");
+      loadSnapshots();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSnapshotBusy(null);
+    }
+  }
+
+  async function handleRestoreSnapshot(fileName: string) {
+    setConfirmingRestore(null);
+    const folders = currentInstallFolders();
+    if (folders.length === 0) {
+      toast.error("Set your install folders in Settings first");
+      return;
+    }
+    setSnapshotBusy(fileName);
+    try {
+      await restoreSnapshot(fileName, folders);
+      toast.success("Backup restored");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSnapshotBusy(null);
+    }
+  }
+
+  async function handleDeleteSnapshot(fileName: string) {
+    setSnapshotBusy(fileName);
+    try {
+      await deleteSnapshot(fileName);
+      loadSnapshots();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSnapshotBusy(null);
+    }
+  }
 
   async function browse(title: string, setter: (v: string) => void) {
     const picked = await pickFolder(title);
@@ -283,6 +374,62 @@ export default function Settings() {
               Expand the WebUI panel(s) to the full window width
             </label>
           </>
+        )}
+
+        {section === "backups" && (
+          <div className="field">
+            <span>Backups</span>
+            <span className="hint">
+              A manual safety net — zips the current contents of your configured install folders so you can put
+              things back if a round of modding goes wrong. Restoring overwrites files the backup has, but won't
+              remove files added since it was taken.
+            </span>
+            <div className="field__row">
+              <button className="button button--primary" disabled={snapshotBusy === "create"} onClick={handleCreateSnapshot}>
+                {snapshotBusy === "create" && <span className="spinner" />} Create a backup now
+              </button>
+            </div>
+
+            {snapshots === null ? (
+              <p className="muted"><span className="spinner" /> Loading backups…</p>
+            ) : snapshots.length === 0 ? (
+              <p className="muted">No backups yet.</p>
+            ) : (
+              <ul className="mod-list">
+                {snapshots.map((s) => {
+                  const busy = snapshotBusy === s.fileName;
+                  return (
+                    <li key={s.fileName} className="mod-card fade-in">
+                      <div className="mod-card__header">
+                        <span className="mod-card__name">{formatSnapshotDate(s.createdAtMs)}</span>
+                        <span className="badge">{formatSnapshotSize(s.sizeBytes)}</span>
+                      </div>
+                      {confirmingRestore === s.fileName ? (
+                        <div className="field__row">
+                          <span className="error">Overwrite current files with this backup?</span>
+                          <button className="button button--danger" disabled={busy} onClick={() => handleRestoreSnapshot(s.fileName)}>
+                            {busy && <span className="spinner" />} Confirm
+                          </button>
+                          <button className="button" disabled={busy} onClick={() => setConfirmingRestore(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="field__row">
+                          <button className="button" disabled={busy} onClick={() => setConfirmingRestore(s.fileName)}>
+                            <RefreshIcon className="btn-icon" /> Restore
+                          </button>
+                          <button className="button button--danger" disabled={busy} onClick={() => handleDeleteSnapshot(s.fileName)}>
+                            {busy && <span className="spinner" />} <TrashIcon className="btn-icon" /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         )}
 
         {section === "account" && (

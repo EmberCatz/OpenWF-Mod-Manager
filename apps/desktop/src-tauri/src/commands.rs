@@ -356,6 +356,167 @@ pub fn scan_install_folder(dir: String) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+// Manual "put my install back to how it was before I started modding"
+// safety net (TODO.md § Ideas) — deliberately a manual action in Settings,
+// not an automatic snapshot before every install: that would slow down and
+// complicate the common case for a feature that's explicitly a fallback,
+// not primary UX. Snapshots the *current* contents of each configured
+// install folder into one timestamped zip, stored under the app's own data
+// dir (not the install folders themselves, so a snapshot never shows up as
+// an "orphaned file" in InstalledMods' own scan of those folders).
+
+#[derive(serde::Deserialize, Clone)]
+pub struct SnapshotFolder {
+    pub label: String, // e.g. "Metadata Patches" — becomes each entry's top-level folder inside the zip
+    pub path: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotInfo {
+    file_name: String,
+    created_at_ms: u64, // encoded in the filename itself at creation time, not read from filesystem metadata (unreliable across copies/cloud sync) — apps/desktop formats this with Date, Rust doesn't need to
+    size_bytes: u64,
+}
+
+fn snapshots_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("snapshots");
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create '{}': {e}", dir.display()))?;
+    Ok(dir)
+}
+
+fn now_unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+// Pure zip-building step, split out from the #[tauri::command] wrapper so
+// it's testable without a running app (same reasoning as
+// extract_zip_with_cap vs. install_mod_zip above). Walks each folder with
+// the existing collect_files helper and stores every file under
+// `<label>/<path relative to that folder>` inside the archive, so
+// apply_snapshot_zip can route each section back to wherever that label
+// points at restore time — not necessarily the same absolute path it was
+// snapshotted from, in case Settings changed in between.
+fn build_snapshot_zip(folders: &[SnapshotFolder]) -> Result<Vec<u8>, String> {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    for folder in folders {
+        let base = PathBuf::from(&folder.path);
+        let mut abs_files = Vec::new();
+        collect_files(&base, &mut abs_files)?;
+
+        for abs in abs_files {
+            let abs_path = PathBuf::from(&abs);
+            let rel = abs_path.strip_prefix(&base).map_err(|e| e.to_string())?;
+            let zip_name = format!("{}/{}", folder.label, rel.to_string_lossy().replace('\\', "/"));
+            writer
+                .start_file(&zip_name, options)
+                .map_err(|e| format!("failed to add '{zip_name}' to snapshot: {e}"))?;
+            let bytes = fs::read(&abs_path).map_err(|e| format!("failed to read '{}': {e}", abs_path.display()))?;
+            writer.write_all(&bytes).map_err(|e| format!("failed to write '{zip_name}' into snapshot: {e}"))?;
+        }
+    }
+
+    let cursor = writer.finish().map_err(|e| format!("failed to finalize snapshot archive: {e}"))?;
+    Ok(cursor.into_inner())
+}
+
+// Restores a previously-built snapshot's file *contents* on top of
+// `folders` — overwrites files the snapshot has, but does not delete files
+// added since the snapshot was taken, since that would need a full
+// before/after folder diff this feature doesn't attempt. Documented as a
+// best-effort content restore, not a byte-perfect folder-state revert.
+// Entries whose top-level label doesn't match any of `folders` are skipped
+// rather than erroring, so restoring after a folder was removed from
+// Settings just does less, not nothing.
+fn apply_snapshot_zip(bytes: &[u8], folders: &[SnapshotFolder]) -> Result<(), String> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("not a valid snapshot archive: {e}"))?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| format!("failed to read snapshot entry: {e}"))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(relative_path) = entry.enclosed_name() else {
+            continue;
+        };
+
+        let mut components = relative_path.components();
+        let Some(label_component) = components.next() else {
+            continue;
+        };
+        let label = label_component.as_os_str().to_string_lossy().into_owned();
+        let Some(target) = folders.iter().find(|f| f.label == label) else {
+            continue; // this label isn't configured (or isn't set) anymore
+        };
+        let rest: PathBuf = components.collect();
+        if rest.as_os_str().is_empty() {
+            continue;
+        }
+
+        let dest_path = PathBuf::from(&target.path).join(&rest);
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("failed to create '{}': {e}", parent.display()))?;
+        }
+        let mut out_file = fs::File::create(&dest_path).map_err(|e| format!("failed to create '{}': {e}", dest_path.display()))?;
+        std::io::copy(&mut entry, &mut out_file).map_err(|e| format!("failed to write '{}': {e}", dest_path.display()))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn snapshot_install_folders(app: tauri::AppHandle, folders: Vec<SnapshotFolder>) -> Result<String, String> {
+    let bytes = build_snapshot_zip(&folders)?;
+    let dir = snapshots_dir(&app)?;
+    let file_name = format!("owmm-snapshot-{}.zip", now_unix_millis());
+    fs::write(dir.join(&file_name), bytes).map_err(|e| format!("failed to write snapshot: {e}"))?;
+    Ok(file_name)
+}
+
+#[tauri::command]
+pub fn restore_snapshot(app: tauri::AppHandle, file_name: String, folders: Vec<SnapshotFolder>) -> Result<(), String> {
+    let safe_name = Path::new(&file_name).file_name().ok_or_else(|| format!("invalid snapshot file name: {file_name}"))?;
+    let path = snapshots_dir(&app)?.join(safe_name);
+    let bytes = fs::read(&path).map_err(|e| format!("failed to read '{}': {e}", path.display()))?;
+    apply_snapshot_zip(&bytes, &folders)
+}
+
+#[tauri::command]
+pub fn list_snapshots(app: tauri::AppHandle) -> Result<Vec<SnapshotInfo>, String> {
+    let dir = snapshots_dir(&app)?;
+    let mut out = Vec::new();
+    for entry in fs::read_dir(&dir).map_err(|e| format!("failed to read '{}': {e}", dir.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("zip") {
+            continue;
+        }
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        let size_bytes = entry.metadata().map_err(|e| e.to_string())?.len();
+        let created_at_ms = file_name
+            .strip_prefix("owmm-snapshot-")
+            .and_then(|s| s.strip_suffix(".zip"))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        out.push(SnapshotInfo { file_name, created_at_ms, size_bytes });
+    }
+    out.sort_by(|a, b| b.created_at_ms.cmp(&a.created_at_ms)); // newest first
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn delete_snapshot(app: tauri::AppHandle, file_name: String) -> Result<(), String> {
+    let safe_name = Path::new(&file_name).file_name().ok_or_else(|| format!("invalid snapshot file name: {file_name}"))?;
+    let path = snapshots_dir(&app)?.join(safe_name);
+    fs::remove_file(&path).map_err(|e| format!("failed to delete '{}': {e}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,6 +596,71 @@ mod tests {
         assert_eq!(listed_zip_paths, real_zip_paths);
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // Round-trip test for the snapshot/restore safety net: two source
+    // folders under different labels, snapshot both, restore into fresh
+    // empty target folders, and confirm every file's content survived —
+    // including that restore correctly routes each label back to its own
+    // folder rather than mixing them up.
+    #[test]
+    fn snapshot_and_restore_round_trip_preserves_file_contents() {
+        let root = std::env::temp_dir().join(format!("owmm-snapshot-test-{}", std::process::id()));
+        let source_a = root.join("source-a");
+        let source_b = root.join("source-b");
+        fs::create_dir_all(source_a.join("nested")).unwrap();
+        fs::create_dir_all(&source_b).unwrap();
+        fs::write(source_a.join("top.pluto"), b"alpha top").unwrap();
+        fs::write(source_a.join("nested/inner.txt"), b"alpha nested").unwrap();
+        fs::write(source_b.join("beta.pluto"), b"beta content").unwrap();
+
+        let folders = vec![
+            SnapshotFolder { label: "Metadata Patches".to_string(), path: source_a.display().to_string() },
+            SnapshotFolder { label: "Scripts".to_string(), path: source_b.display().to_string() },
+        ];
+
+        let zip_bytes = build_snapshot_zip(&folders).unwrap();
+
+        // Restore into fresh, empty target folders — proves restore doesn't
+        // depend on the target already looking like the source.
+        let target_a = root.join("target-a");
+        let target_b = root.join("target-b");
+        let restore_folders = vec![
+            SnapshotFolder { label: "Metadata Patches".to_string(), path: target_a.display().to_string() },
+            SnapshotFolder { label: "Scripts".to_string(), path: target_b.display().to_string() },
+        ];
+        apply_snapshot_zip(&zip_bytes, &restore_folders).unwrap();
+
+        assert_eq!(fs::read(target_a.join("top.pluto")).unwrap(), b"alpha top");
+        assert_eq!(fs::read(target_a.join("nested/inner.txt")).unwrap(), b"alpha nested");
+        assert_eq!(fs::read(target_b.join("beta.pluto")).unwrap(), b"beta content");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // A label with no matching entry in the restore-time folder list (the
+    // user removed it from Settings, say) should be skipped, not error the
+    // whole restore.
+    #[test]
+    fn restore_skips_labels_with_no_matching_target() {
+        let root = std::env::temp_dir().join(format!("owmm-snapshot-test-orphan-{}", std::process::id()));
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("a.pluto"), b"content").unwrap();
+
+        let zip_bytes = build_snapshot_zip(&[SnapshotFolder { label: "Scripts".to_string(), path: source.display().to_string() }]).unwrap();
+
+        // Restore-time folders only know about a different label.
+        let target = root.join("target");
+        let result = apply_snapshot_zip(
+            &zip_bytes,
+            &[SnapshotFolder { label: "Metadata Patches".to_string(), path: target.display().to_string() }],
+        );
+
+        assert!(result.is_ok(), "an unmatched label should be skipped, not fail the restore");
+        assert!(!target.exists(), "nothing should have been written for the unmatched label");
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

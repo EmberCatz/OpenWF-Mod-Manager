@@ -87,6 +87,40 @@ export async function scanInstallFolder(dir: string): Promise<string[]> {
   return invoke<string[]>("scan_install_folder", { dir });
 }
 
+export interface SnapshotFolder {
+  label: string;
+  path: string;
+}
+
+export interface SnapshotInfo {
+  fileName: string;
+  createdAtMs: number;
+  sizeBytes: number;
+}
+
+// Manual "put my install back to how it was" safety net (Settings' new
+// Backups section) — zips the current contents of each configured install
+// folder into one timestamped archive under the app's own data dir.
+// Returns the new snapshot's file name.
+export async function snapshotInstallFolders(folders: SnapshotFolder[]): Promise<string> {
+  return invoke<string>("snapshot_install_folders", { folders });
+}
+
+// Restores a snapshot's file contents on top of `folders` — overwrites
+// matching files, but doesn't delete files added since the snapshot was
+// taken (see commands.rs's apply_snapshot_zip for why).
+export async function restoreSnapshot(fileName: string, folders: SnapshotFolder[]): Promise<void> {
+  await invoke("restore_snapshot", { fileName, folders });
+}
+
+export async function listSnapshots(): Promise<SnapshotInfo[]> {
+  return invoke<SnapshotInfo[]>("list_snapshots");
+}
+
+export async function deleteSnapshot(fileName: string): Promise<void> {
+  await invoke("delete_snapshot", { fileName });
+}
+
 export interface ZipTextEntry {
   name: string;
   content: string;
