@@ -89,6 +89,7 @@ export default function EditModForm({ mod, apiKey, onSaved, onCancel }: EditModF
       </label>
       <label className="field">
         <span>Description</span>
+        <span className="hint">Supports basic Markdown (bold, lists, links, code, headings).</span>
         <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
       <label className="field">

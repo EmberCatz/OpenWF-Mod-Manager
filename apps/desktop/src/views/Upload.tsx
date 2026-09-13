@@ -199,6 +199,7 @@ export default function Upload() {
               </label>
               <label className="field">
                 <span>Description</span>
+                <span className="hint">Supports basic Markdown (bold, lists, links, code, headings).</span>
                 <textarea value={newModForm.description} onChange={(e) => setNewModForm({ ...newModForm, description: e.target.value })} rows={3} />
               </label>
               <label className="field">

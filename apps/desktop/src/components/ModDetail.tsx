@@ -17,6 +17,7 @@ import FilePreview from "./FilePreview";
 import CommentSection from "./CommentSection";
 import ReportButton from "./ReportButton";
 import AuthorLink from "./AuthorLink";
+import { renderModDescription } from "../markdown";
 
 interface ModDetailProps {
   modId: string;
@@ -259,7 +260,10 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                 </div>
               )}
 
-              <p className="mod-detail__description">{mod.description}</p>
+              <div
+                className="mod-detail__description"
+                dangerouslySetInnerHTML={{ __html: renderModDescription(mod.description) }}
+              />
 
               {mod.installInstructions && (
                 <div className="mod-detail__install-instructions">

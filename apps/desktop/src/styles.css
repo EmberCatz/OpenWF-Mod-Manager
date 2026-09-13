@@ -894,6 +894,44 @@ body {
   margin: 0.75rem 0;
 }
 
+.mod-detail__description > :first-child {
+  margin-top: 0;
+}
+
+.mod-detail__description > :last-child {
+  margin-bottom: 0;
+}
+
+.mod-detail__description code {
+  background: var(--panel-alt);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+
+.mod-detail__description pre {
+  background: var(--panel-alt);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+}
+
+.mod-detail__description pre code {
+  background: none;
+  padding: 0;
+}
+
+.mod-detail__description blockquote {
+  border-left: 3px solid var(--border);
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  color: var(--muted);
+}
+
+.mod-detail__description a {
+  color: var(--accent);
+}
+
 .mod-detail__screenshots {
   display: flex;
   flex-wrap: wrap;
