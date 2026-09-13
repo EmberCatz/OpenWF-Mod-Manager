@@ -17,10 +17,13 @@ interface PickedFile {
   bytes: number[];
 }
 
-// Shows the native "open file" dialog and reads the picked file, both on
-// the Rust side (see commands.rs's rationale) — the path never crosses
-// back into JS as a string, so there's nothing here for a compromised
-// script to redirect to an arbitrary file. Returns null if cancelled.
+// Shows the native "open file" dialog (multi-select) and reads the picked
+// file(s), both on the Rust side (see commands.rs's rationale) — the path
+// never crosses back into JS as a string, so there's nothing here for a
+// compromised script to redirect to an arbitrary file. A single pick comes
+// back as-is; picking several bundles them into one zip on the Rust side,
+// since a mod version is still just one uploaded file. Returns null if
+// cancelled.
 export async function pickAndReadModFile(): Promise<{ fileName: string; bytes: Uint8Array } | null> {
   const result = await invoke<PickedFile | null>("pick_and_read_mod_file");
   if (!result) return null;

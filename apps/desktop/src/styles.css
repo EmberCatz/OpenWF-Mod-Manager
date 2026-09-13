@@ -37,6 +37,14 @@ body {
   padding: 2rem 2rem;
 }
 
+/* Every textarea in the app (upload/edit forms, comments, reports) —
+   browsers default to `resize: both`, which lets a drag past the right
+   edge widen the textarea past its container instead of just growing it
+   taller. One global rule instead of repeating it per form. */
+textarea {
+  resize: vertical;
+}
+
 .app > h1 {
   display: flex;
   align-items: center;

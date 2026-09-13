@@ -352,8 +352,9 @@ export default function Upload() {
 
         <div className="upload-card">
           <h4 className="upload-card__title">File</h4>
+          <span className="hint">Pick one file, or select multiple at once to bundle them into a single zip.</span>
           <div className="field__row">
-            <button className="button" onClick={pickFile}>Choose file…</button>
+            <button className="button" onClick={pickFile}>Choose file(s)…</button>
             <button className="button button--primary" onClick={submit} disabled={status.kind === "working"}>
               {status.kind === "working" && <span className="spinner" />}
               {status.kind === "working" ? "Uploading…" : "Upload"}

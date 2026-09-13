@@ -58,29 +58,90 @@ pub struct PickedFile {
     bytes: Vec<u8>,
 }
 
-// Shows a native "open file" dialog (same filters Upload.tsx always used)
-// and reads the picked file in one step. Returns None if the user cancelled.
+// Every version is still exactly one uploaded file server-side (one
+// GitHub Release asset) — picking more than one here bundles them into a
+// single flat zip rather than the API gaining a concept of multi-file
+// versions. Two picked files with the same base name (from different
+// source folders) would otherwise silently overwrite each other inside
+// the archive, so a repeat gets "_2", "_3", etc. spliced in before the
+// extension. Pure/no-AppHandle so it's testable without a running app,
+// same reasoning as build_snapshot_zip below.
+fn bundle_files_into_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    let mut used_names = std::collections::HashSet::new();
+    for (name, bytes) in files {
+        let mut zip_name = name.clone();
+        if !used_names.insert(zip_name.clone()) {
+            let (stem, ext) = match name.rsplit_once('.') {
+                Some((s, e)) => (s.to_string(), format!(".{e}")),
+                None => (name.clone(), String::new()),
+            };
+            let mut n = 2;
+            loop {
+                let candidate = format!("{stem}_{n}{ext}");
+                if used_names.insert(candidate.clone()) {
+                    zip_name = candidate;
+                    break;
+                }
+                n += 1;
+            }
+        }
+        writer
+            .start_file(&zip_name, options)
+            .map_err(|e| format!("failed to add '{zip_name}' to bundle: {e}"))?;
+        writer.write_all(bytes).map_err(|e| format!("failed to write '{zip_name}' into bundle: {e}"))?;
+    }
+
+    let cursor = writer.finish().map_err(|e| format!("failed to finalize bundle archive: {e}"))?;
+    Ok(cursor.into_inner())
+}
+
+// Shows a native "open file" dialog (same filters Upload.tsx always used),
+// allowing multiple selections, and reads the picked file(s) in one step.
+// A single file is returned as-is (so uploading one bare .pluto/.txt still
+// doesn't force a zip wrapper); more than one is bundled into a single zip
+// via bundle_files_into_zip, named after the first file picked. Returns
+// None if the user cancelled.
 #[tauri::command]
 pub async fn pick_and_read_mod_file(app: tauri::AppHandle) -> Result<Option<PickedFile>, String> {
     let picked = app
         .dialog()
         .file()
-        .set_title("Select a mod file to upload")
+        .set_title("Select mod file(s) to upload")
         .add_filter("Mod file", &["pluto", "txt", "zip"])
-        .blocking_pick_file();
+        .blocking_pick_files();
 
-    let Some(file_path) = picked else {
+    let Some(file_paths) = picked else {
         return Ok(None);
     };
 
-    let path = file_path.into_path().map_err(|e| e.to_string())?;
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .ok_or_else(|| format!("picked file has no name: {}", path.display()))?;
-    let bytes = fs::read(&path).map_err(|e| format!("failed to read '{}': {e}", path.display()))?;
+    let mut files = Vec::new();
+    for file_path in file_paths {
+        let path = file_path.into_path().map_err(|e| e.to_string())?;
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .ok_or_else(|| format!("picked file has no name: {}", path.display()))?;
+        let bytes = fs::read(&path).map_err(|e| format!("failed to read '{}': {e}", path.display()))?;
+        files.push((file_name, bytes));
+    }
 
-    Ok(Some(PickedFile { file_name, bytes }))
+    if files.len() == 1 {
+        let (file_name, bytes) = files.remove(0);
+        return Ok(Some(PickedFile { file_name, bytes }));
+    }
+
+    let bundle_name = match files.first() {
+        Some((first_name, _)) => match first_name.rsplit_once('.') {
+            Some((stem, _)) => format!("{stem}-bundle.zip"),
+            None => format!("{first_name}-bundle.zip"),
+        },
+        None => return Ok(None), // an empty selection shouldn't happen, but isn't an error
+    };
+    let bytes = bundle_files_into_zip(&files)?;
+    Ok(Some(PickedFile { file_name: bundle_name, bytes }))
 }
 
 // Shows a native "save file" dialog and writes bytes to wherever the user
@@ -672,5 +733,48 @@ mod tests {
 
         assert_eq!(paths.len(), 1);
         assert!(!tmp.exists(), "a dry run must not create the target directory or any file in it");
+    }
+
+    fn read_zip_entries(bytes: Vec<u8>) -> std::collections::HashMap<String, Vec<u8>> {
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut out = std::collections::HashMap::new();
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).unwrap();
+            let mut content = Vec::new();
+            entry.read_to_end(&mut content).unwrap();
+            out.insert(entry.name().to_string(), content);
+        }
+        out
+    }
+
+    // Regression for multi-file upload (TODO.md): picking several files at
+    // once must bundle every one of them into the zip, byte for byte, not
+    // silently drop any.
+    #[test]
+    fn bundle_files_into_zip_includes_every_file() {
+        let files = vec![("a.pluto".to_string(), b"alpha".to_vec()), ("b.txt".to_string(), b"beta".to_vec())];
+
+        let entries = read_zip_entries(bundle_files_into_zip(&files).unwrap());
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries["a.pluto"], b"alpha");
+        assert_eq!(entries["b.txt"], b"beta");
+    }
+
+    // Two picked files can share a base name if they came from different
+    // source folders — the second must be renamed rather than silently
+    // overwriting the first's entry in the archive.
+    #[test]
+    fn bundle_files_into_zip_dedupes_repeated_names() {
+        let files = vec![
+            ("script.pluto".to_string(), b"first".to_vec()),
+            ("script.pluto".to_string(), b"second".to_vec()),
+        ];
+
+        let entries = read_zip_entries(bundle_files_into_zip(&files).unwrap());
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries["script.pluto"], b"first");
+        assert_eq!(entries["script_2.pluto"], b"second");
     }
 }
