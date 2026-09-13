@@ -361,6 +361,13 @@ export default function Settings() {
               If you're a rights holder with a concern about content hosted or distributed through this project, open
               an issue on the project's GitHub repo — it will be addressed promptly.
             </p>
+            <p className="hint">
+              Found a bug in the app itself?{" "}
+              <a href="https://github.com/EmberCatz/OpenWF-Mod-Manager/issues" target="_blank" rel="noreferrer">
+                Report it on GitHub Issues
+              </a>
+              .
+            </p>
           </div>
         )}
       </div>
