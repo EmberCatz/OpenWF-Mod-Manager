@@ -32,6 +32,7 @@ import {
 import { AVATAR_KEYS } from "@openwf-mod-manager/shared";
 import { deleteAccount, login, logout, signup, updateAvatar, updateGithubUrl } from "../api";
 import { useAccount } from "../useAccount";
+import { consumeAccountSettingsRequest, subscribeAccountNav } from "../accountNav";
 import { RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import Avatar from "../components/Avatar";
@@ -59,7 +60,10 @@ function formatSnapshotSize(bytes: number): string {
 }
 
 export default function Settings() {
-  const [section, setSection] = useState<Section>("folders");
+  // The header's LOGIN/account-name control (App.tsx) jumps straight to the
+  // Account section instead of dumping the user on "folders" — see
+  // accountNav.ts for why this is a consumed flag, not a live subscription.
+  const [section, setSection] = useState<Section>(() => (consumeAccountSettingsRequest() ? "account" : "folders"));
   const [metadataPatchesPath, setMetadataPatchesPathState] = useState(getMetadataPatchesPath() ?? "");
   const [scriptsPath, setScriptsPathState] = useState(getScriptsPath() ?? "");
   const [saved, setSaved] = useState(false);
@@ -91,6 +95,11 @@ export default function Settings() {
   useEffect(() => {
     if (section === "backups") loadSnapshots();
   }, [section]);
+
+  // Covers the case the initial-state consume above can't: the header's
+  // account control clicked while already sitting on Settings (so it never
+  // remounts) — see accountNav.ts.
+  useEffect(() => subscribeAccountNav(() => setSection("account")), []);
 
   function currentInstallFolders(): SnapshotFolder[] {
     return [

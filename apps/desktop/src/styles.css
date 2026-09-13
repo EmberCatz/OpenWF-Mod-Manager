@@ -49,6 +49,47 @@ body {
   letter-spacing: 0.04em;
 }
 
+.app-account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.app-account__name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-account__name:hover {
+  color: var(--accent);
+}
+
+.app-account__logout {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.65rem;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.app-account__logout:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .app-logo {
   height: 2.25rem;
   width: auto;

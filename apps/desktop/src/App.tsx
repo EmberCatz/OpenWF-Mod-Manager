@@ -8,9 +8,12 @@ import Admin from "./views/Admin";
 import Settings from "./views/Settings";
 import Profile from "./views/Profile";
 import ToastHost from "./components/ToastHost";
+import Avatar from "./components/Avatar";
 import { useAccount } from "./useAccount";
-import { isLiveSettingsTabEnabled, subscribeSettings } from "./settings";
+import { logout as apiLogout } from "./api";
+import { clearApiKey, getApiKey, isLiveSettingsTabEnabled, subscribeSettings } from "./settings";
 import { subscribeProfileNav } from "./profileNav";
+import { openAccountSettings } from "./accountNav";
 import headerLogo from "./assets/logos/header-logo.png";
 
 const ALL_TABS = [
@@ -24,7 +27,7 @@ const ALL_TABS = [
 ] as const;
 
 export default function App() {
-  const { account } = useAccount();
+  const { account, setAccount } = useAccount();
   const [activeTab, setActiveTab] = useState<(typeof ALL_TABS)[number]["id"]>("browse");
   // Bumped whenever a tab-visibility toggle changes in Settings, so the tab
   // list below re-filters immediately instead of needing an app restart.
@@ -50,11 +53,42 @@ export default function App() {
   });
   const ActiveView = (tabs.find((t) => t.id === activeTab) ?? tabs[0]).view;
 
+  function goToAccountSettings() {
+    setActiveTab("settings");
+    setProfileAccountId(null);
+    openAccountSettings();
+  }
+
+  async function handleHeaderLogout() {
+    const token = await getApiKey();
+    if (token) await apiLogout(token);
+    await clearApiKey();
+    setAccount(null);
+  }
+
   return (
     <main className="app">
       <h1>
         <img src={headerLogo} alt="" className="app-logo" />
         OpenWF Mod Manager
+
+        <div className="app-account">
+          {account ? (
+            <>
+              <button className="app-account__name" onClick={goToAccountSettings}>
+                {account.username}
+              </button>
+              <Avatar name={account.username} avatarKey={account.avatarKey} size={24} />
+              <button className="app-account__logout" onClick={handleHeaderLogout}>
+                Log out
+              </button>
+            </>
+          ) : (
+            <button className="app-account__name" onClick={goToAccountSettings}>
+              LOGIN
+            </button>
+          )}
+        </div>
       </h1>
 
       <nav className="tabs">
