@@ -1129,31 +1129,6 @@ body {
   border-radius: 0;
 }
 
-.mod-card__thumb-overlay-title {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 0.75rem;
-  text-align: center;
-  background: none;
-  border: none;
-  color: #fff;
-  font-family: "League Gothic", "Rajdhani", sans-serif;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  font-size: 1.6em;
-  line-height: 1.2;
-  cursor: pointer;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 16px rgba(0, 0, 0, 0.55);
-}
-
-.mod-card__thumb-overlay-title:hover {
-  text-decoration: underline;
-}
-
 .mod-card__grid-body {
   flex: 1;
   min-height: 0;
@@ -1163,7 +1138,12 @@ body {
 }
 
 .mod-card--grid .mod-card__name {
-  display: block;
+  display: inline-block;
+  /* Without this, the flex column's default align-items: stretch forces
+     the button to the full cross-axis width regardless of `display`,
+     leaving a clickable zone well past a short title's actual text. */
+  align-self: flex-start;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

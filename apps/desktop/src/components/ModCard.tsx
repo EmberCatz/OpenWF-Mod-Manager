@@ -161,11 +161,6 @@ export default function ModCard({ mod, viewMode, onOpen, onTagClick, style }: Mo
             style={{ objectPosition: hasThumb ? mod.thumbnailPosition : "50% 50%" }}
             onError={() => mod.thumbnailUrl && setThumbBroken(true)}
           />
-          {!hasThumb && (
-            <button className="mod-card__thumb-overlay-title" onClick={onOpen}>
-              {mod.name}
-            </button>
-          )}
         </div>
         <div className="mod-card__grid-body">
           <button className="mod-card__name mod-card__name--link" onClick={onOpen}>
