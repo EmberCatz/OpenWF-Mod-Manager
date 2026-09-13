@@ -64,7 +64,7 @@ testing) rather than letting them evaporate.
       other mod's own tracked files (dropping its entry entirely if nothing
       it still owns is left) so a later uninstall of *that* mod can't
       collateral-damage the new one. Author-declared "requires X"/"conflicts
-      with Y" is the still-open other half — see Ideas below.
+      with Y" was the other half — see Recently shipped above.
 - [x] Author reply badge on comments — turned out to need no backend work
       at all: `comments.author_account_id` (added for the comment-
       impersonation fix) was already a real, verified link set only when
@@ -196,35 +196,91 @@ testing) rather than letting them evaporate.
 - [x] Mod detail view — full version history, changelogs, screenshots
       (`components/ModDetail.tsx`)
 - [x] Search across name/description/author, on top of the existing tag filter
+- [x] Manual backup/restore of the configured install folders — new Rust
+      commands (`snapshot_install_folders`/`restore_snapshot`/
+      `list_snapshots`/`delete_snapshot`, `src-tauri/src/commands.rs`) zip
+      the current contents of the Metadata Patches/Scripts folders into a
+      timestamped archive under the app's own data dir (not the install
+      folders themselves, so a snapshot never shows up as an orphaned
+      file), exposed via a new Settings "Backups" section. Deliberately
+      manual, not an automatic snapshot before every install — that would
+      slow down/complicate the common case for what's meant to stay a
+      fallback net. Restore overwrites files the snapshot has but doesn't
+      delete files added since (best-effort content restore, not a
+      byte-perfect folder-state revert). Core zip logic split into pure,
+      testable functions the same way `extract_zip_with_cap` already is —
+      covered by a round-trip test and an unmatched-label-is-skipped test.
+- [x] Sanitized Markdown mod descriptions — new `src/markdown.ts` (marked +
+      DOMPurify against a conservative tag allowlist, no `<img>` since
+      screenshots already have their own Imgur-only field) replaces the
+      old plain-text `<p>{mod.description}</p>` in `ModDetail.tsx`.
+      Verified a `<script>`/`onerror` injection probe renders as nothing
+      and fires no alert.
+- [x] Author-declared "requires X" / "conflicts with Y" between mods — new
+      `mods.requires_mod_ids`/`conflicts_with_mod_ids` JSON-array columns
+      (same convention as `tags`), a new `ModPicker` chip-input component
+      in Upload/EditModForm, and an install-time check in `modActions.ts`
+      (`DeclaredConflictError`, surfaced via a new
+      `useDeclaredConflictConfirm` dialog in `ConflictConfirmDialog.tsx`)
+      alongside the existing file-path `ModConflictError`. Deliberately
+      one-directional for now — only checks the mod being installed's own
+      declared lists, not every other installed mod's lists against it,
+      to avoid an extra fetch per install.
+- [x] Code-specific mod reporting — `FilePreview.tsx` shows a "Report this
+      snippet" action (toolbar and fullscreen header) whenever there's an
+      active text selection, pre-filling `ReportButton`'s form with the
+      quoted snippet + source file name via a new `prefill` prop. No
+      schema change — `reports.reason` was already free text.
+- [x] Author-authored risk/warning banner — new nullable `mods.risk_notes`
+      column, purely author-declared free text ("anything to watch out
+      for?"), no admin/moderation involvement. Rendered as a red-tinted
+      "Before you install" block above the description on Mod Detail,
+      reusing the existing `button--danger` color palette.
+- [x] Optional install-instructions field per mod — new nullable
+      `mods.install_instructions` column, same 4-file pattern as
+      `subAuthor`. Optional textarea in Upload/EditModForm; shown on Mod
+      Detail as its own "Installation Notes" section, separate from the
+      general description.
+- [x] Optional GitHub link on creator profiles — new nullable
+      `modders.github_url` column, self-editable via `PATCH /api/auth/me`
+      (which now takes a partial `{avatarKey?, githubUrl?}` body instead of
+      requiring `avatarKey`), restricted to github.com URLs for the same
+      reason thumbnails are restricted to Imgur. Shown in Settings (edit)
+      and `Profile.tsx` (public display).
+- [x] "Report a bug" link in Settings' About/Disclaimer, out to the app
+      repo's GitHub Issues page — the TODO's own "simplest version," no
+      new backend.
+- [x] Restricted thumbnail/screenshot URLs to Imgur only — a new
+      `isImgurUrl()` (server: `routes/mods.ts`; client: `src/imgur.ts`,
+      shared by `ThumbnailPreview.tsx`/`ScreenshotPreviewList.tsx`)
+      replaces the old bare `isHttpUrl()` check for these two fields, both
+      client- and server-side.
+- [x] Extended `containsLink()` to guard mod name, description, sub-author,
+      theme, and each tag on both `POST /api/mods` and `PATCH /api/mods/:id`
+      — previously only a comment's body/author name were checked.
+- [x] Fullscreen screenshot preview on Mod Detail — click a screenshot to
+      view it larger in a closable overlay, reusing `FilePreview.tsx`'s
+      fullscreen-modal skeleton.
+- [x] "Uninstall all" button on Installed Mods — mirrors the existing
+      "Update all" banner action, gated behind an inline confirm/cancel
+      toggle since it's destructive (same pattern as ModDetail's
+      admin-delete confirm).
+- [x] Fixed the grid-view title hit-area mismatch — `ModCard.tsx` no longer
+      renders a separate full-thumbnail overlay title for mods without a
+      thumbnail (it was competing with the normal inline name below it);
+      the one remaining title button also no longer stretches to the
+      card's full width via the flex column's default
+      `align-items: stretch`, so hover/click now only responds over the
+      actual visible text.
+- [x] Header logo, dropped the gold accent bar — `App.tsx`'s `<h1>` now
+      renders the app's own icon (exported from
+      `src-tauri/icons/source.png` into the previously-empty
+      `src/assets/logos/`) next to the title text instead of the old
+      `border-left` bar in `styles.css`.
 
 ## Up next
 - [ ] Tauri auto-updater, once builds are actually distributed as installers
       rather than launched in dev mode
-- [ ] Header logo + remove the accent line — `.app > h1` (`styles.css`) has
-      a `border-left: 4px solid var(--accent)` gold bar; drop it and put
-      the app's icon to the left of the title text in `App.tsx`. A source
-      image already exists (`apps/desktop/src-tauri/icons/source.png`,
-      also used for `.github/assets/logo.png`) — `src/assets/logos/`
-      exists but is empty, presumably where a header-sized export belongs.
-- [ ] Grid-view title hover zone — the mouseover/click hit-area on a mod's
-      name in grid cards (`.mod-card__name` / `.mod-card__thumb-overlay-
-      title` in `components/ModCard.tsx`) doesn't line up with the visible
-      text. Needs a look before deciding the fix — hit-area padding vs.
-      overlap with the thumbnail-title button that only renders when
-      there's no thumbnail.
-- [ ] "Uninstall all" button on Installed Mods — mirrors the existing
-      "Update all" banner action already in `views/InstalledMods.tsx`.
-- [ ] Restrict image URLs to Imgur only — `thumbnailUrl`/`screenshotUrls`
-      currently accept any http(s) URL (`isHttpUrl`/`validateScreenshotUrls`
-      in `routes/mods.ts`); narrow both the client-side preview components
-      (`ThumbnailPreview.tsx`, `ScreenshotPreviewList.tsx`) and the server
-      validation to imgur.com links only.
-- [ ] Disallow links in every server-saved, publicly-displayed text field —
-      `containsLink()` (`contentFilters.ts`) currently only guards a
-      comment's body/author name (`POST /:id/comments`). Mod name,
-      description, sub-author, tags, and theme all go through
-      `POST /api/mods` / `PATCH /api/mods/:id` with no link check at all —
-      extend it there too.
 
 ## Ideas, not committed to yet
 - [ ] Mod Settings tab — let players adjust exposed values in a `.pluto`
@@ -258,64 +314,12 @@ testing) rather than letting them evaporate.
       - Docker doesn't complicate reachability — the Server WebUI tab
         already proves the container's HTTP port is published to the
         host, same port a client-API integration would use.
-- [ ] Author-declared "requires X" / "conflicts with Y" between mods — the
-      other half of the item above this used to be (file-conflict
-      *detection* now ships, see Recently shipped): that's the system
-      noticing an actual collision, this would be an author stating intent
-      up front (needs new mod metadata, an Upload-form field, and an
-      install-time check against it). Bigger lift — schema + upload UI, not
-      just client-side path math — so left as a distinct follow-up rather
-      than bundled into the detection work.
-- [ ] Snapshot/restore of the Warframe install folders before an install —
-      today's uninstall only removes exactly what *that mod's* install
-      wrote (by design), so there's no generic "put my install back to how
-      it was before I started modding" safety net. Matters more here than
-      in a typical mod manager since installs patch client files directly.
-- [ ] Markdown/rich-text mod descriptions — `mods.description` is plain
-      TEXT rendered as-is (`<p>{mod.description}</p>` in `ModDetail.tsx`).
-      Needs a markdown renderer plus sanitizing the output before it's
-      shown to other users — this is untrusted user content rendered to
-      everyone who opens the mod, so an unsanitized renderer is a
-      stored-XSS hole, worth treating carefully given the existing
-      security-audit passes (`docs/security-audit-2026-09.md`).
-- [ ] Optional install-instructions field — a new mod field (schema column
-      + Upload/EditModForm input + a ModDetail section) for steps specific
-      to that mod, separate from the general client-setup guide (the
-      about.openwf.io "Client Setup" page, not something this repo hosts).
-- [ ] Fullscreen screenshot preview — click a screenshot in `ModDetail` to
-      view it fullscreen; can likely reuse the click-to-fullscreen pattern
-      already built for the file preview popup.
-- [ ] Bug report tracker — simplest version is just a "Report a bug" link
-      out to the GitHub repo's Issues page (no new backend); a real in-app
-      tracker would duplicate what GitHub Issues already does unless it
-      specifically needs to be reachable without a GitHub account.
 - [ ] Alpha/Beta badge with live version info — pull the version from the
       Tauri app itself (`@tauri-apps/api/app`'s `getVersion()`) rather than
       a hand-maintained string, plus a build/update date. Needs deciding
       where the date comes from — a build-time-injected constant vs.
       reading it from somewhere at runtime.
-- [ ] Mod risk/warning banner — a prominent red block on `ModDetail` for
-      mods that could break the game. Open question before building:
-      author-self-declared (trust-based, an Upload field) vs. admin-only
-      (safer against abuse or omission, but every warning then needs a
-      human to add it first) — worth deciding before adding schema for it.
-- [ ] Code-specific mod reporting — extend `ReportButton.tsx`/the `reports`
-      table so a report on a mod can point at a specific snippet from its
-      file preview (`FilePreview.tsx`), not just the mod as a whole. The
-      real complexity is capturing a text selection from the existing
-      syntax-highlighted preview and carrying it through to the report.
-- [ ] GitHub link on creator profiles — a new nullable column on `modders`
-      (same shape as `avatar_key`), editable in Settings, shown on
-      `views/Profile.tsx`.
-- [ ] Rework: auto-generate mod naming from category — e.g.
-      "tonysmegacheat" + Cheat Tool → "cheattool - tonysmegacheat". Needs
-      deciding *what* this renames: the internal `id` slug (`slugify()` in
-      `routes/mods.ts`) is baked into every version and its GitHub release
-      and must never change after creation (see `docs/architecture.md`),
-      so if this means the id, it can only apply at creation time, not
-      retroactively to existing mods — versus just the human-readable
-      `name` field, which is freely editable via `PATCH /api/mods/:id`
-      already and carries none of that risk.
+
 
 ## Security
 
