@@ -337,7 +337,13 @@ can trail the launch.
       ("Scanning…" / "Flagged") once their version resolves off 'pending'.
       A flagged file auto-files a row in the existing `reports` table
       (target_type 'mod') so it surfaces in Admin → Reports for a human to
-      pull — no parallel review UI. Needs a `VIRUSTOTAL_API_KEY` secret
+      pull — no parallel review UI. A false positive isn't a dead end
+      either: Reports grew a "Clear (false positive)" action next to
+      Resolve/Dismiss on these auto-filed rows (`POST
+      /api/admin/reports/:id/clear-false-positive`) that flips the mod's
+      flagged version(s) — and the underlying `file_scans` rows, so an
+      identical file re-uploaded elsewhere isn't blocked by the same stale
+      verdict — back to clean and resolves the report in one step. Needs a `VIRUSTOTAL_API_KEY` secret
       (free account at virustotal.com/gui/my-apikey) — a no-op until
       that's set, so it's safe to deploy ahead of getting the key. Also
       needs `migrations/0025_file_scans.sql` run against remote D1 (schema.sql

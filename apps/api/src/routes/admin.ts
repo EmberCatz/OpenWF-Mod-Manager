@@ -273,6 +273,53 @@ async function setReportStatus(c: Context<{ Bindings: Env }>, status: "resolved"
 admin.post("/reports/:id/resolve", (c) => setReportStatus(c, "resolved"));
 admin.post("/reports/:id/dismiss", (c) => setReportStatus(c, "dismissed"));
 
+// POST /api/admin/reports/:id/clear-false-positive — admin override for an
+// automated VirusTotal report (src/scan.ts): reactivates every 'flagged'
+// version of the reported mod back to 'clean', and does the same to
+// file_scans for every checksum those versions reference (so an identical
+// file re-uploaded elsewhere isn't blocked by the same stale verdict
+// either), then resolves the report. VT's raw `positives` count on
+// file_scans is left untouched — this overrides the *verdict*, not the
+// historical fact of what VT actually reported; moderation_actions is the
+// real audit trail of who overrode it and when.
+admin.post("/reports/:id/clear-false-positive", async (c) => {
+  const modder = await requireAdmin(c);
+  if (modder instanceof Response) return modder;
+
+  const reportId = c.req.param("id")!;
+  const report = await c.env.DB.prepare("SELECT target_type, target_id FROM reports WHERE id = ?")
+    .bind(reportId)
+    .first<{ target_type: string; target_id: string }>();
+  if (!report) return c.json({ error: "not found" }, 404);
+  if (report.target_type !== "mod") return c.json({ error: "only mod reports can clear a scan flag" }, 400);
+
+  const { results: flaggedVersions } = await c.env.DB.prepare("SELECT id, files FROM mod_versions WHERE mod_id = ? AND scan_status = 'flagged'")
+    .bind(report.target_id)
+    .all<{ id: number; files: string }>();
+
+  const checksums = new Set<string>();
+  for (const v of flaggedVersions) {
+    for (const f of JSON.parse(v.files) as { checksum: string }[]) checksums.add(f.checksum);
+  }
+
+  await c.env.DB.batch([
+    ...flaggedVersions.map((v) => c.env.DB.prepare("UPDATE mod_versions SET scan_status = 'clean' WHERE id = ?").bind(v.id)),
+    ...[...checksums].map((cs) => c.env.DB.prepare("UPDATE file_scans SET status = 'clean' WHERE checksum = ?").bind(cs)),
+    c.env.DB.prepare("UPDATE reports SET status = 'resolved' WHERE id = ?").bind(reportId),
+  ]);
+
+  await logModerationAction(
+    c.env,
+    modder.id,
+    "clear_false_positive_scan",
+    "mod",
+    report.target_id,
+    `Cleared ${flaggedVersions.length} flagged version(s) via report #${reportId}`
+  );
+
+  return c.body(null, 204);
+});
+
 // --- Site controls: the admin "oh shit" panel ---
 // See index.ts's maintenance-mode gate and appSettings.ts for how these
 // flags are actually enforced; this file only reads/writes them.

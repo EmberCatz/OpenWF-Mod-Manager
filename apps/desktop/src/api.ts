@@ -406,6 +406,14 @@ export async function dismissReport(reportId: number, apiKey: string): Promise<v
   await authedJson("POST", `/api/admin/reports/${reportId}/dismiss`, {}, apiKey);
 }
 
+// Admin override for an automated VirusTotal false positive — see
+// routes/admin.ts's /reports/:id/clear-false-positive. Reactivates the
+// reported mod's flagged version(s) back to visible-as-clean and resolves
+// the report in one step.
+export async function clearFalsePositiveScan(reportId: number, apiKey: string): Promise<void> {
+  await authedJson("POST", `/api/admin/reports/${reportId}/clear-false-positive`, {}, apiKey);
+}
+
 export async function deleteCommentAdmin(modId: string, commentId: number, apiKey: string): Promise<void> {
   return authedDelete(`/api/mods/${modId}/comments/${commentId}`, apiKey);
 }

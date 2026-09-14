@@ -3,6 +3,7 @@ import {
   banIp,
   banTag,
   banUser,
+  clearFalsePositiveScan,
   deleteTheme,
   deleteUserAdmin,
   dismissReport,
@@ -468,6 +469,19 @@ function ReportsPanel({ apiKey }: { apiKey: string }) {
     }
   }
 
+  async function handleClearFalsePositive(id: number) {
+    setBusyId(id);
+    try {
+      await clearFalsePositiveScan(id, apiKey);
+      setReports((r) => r.filter((x) => x.id !== id));
+      toast.success("Scan flag cleared — the version is visible as clean again.");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div>
       <div className="tabs tabs--sub">
@@ -500,6 +514,16 @@ function ReportsPanel({ apiKey }: { apiKey: string }) {
                   <button className="button" disabled={busyId === report.id} onClick={() => handleDismiss(report.id)}>
                     Dismiss
                   </button>
+                  {report.targetType === "mod" && report.reason.startsWith("Automated: VirusTotal") && (
+                    <button
+                      className="button"
+                      disabled={busyId === report.id}
+                      onClick={() => handleClearFalsePositive(report.id)}
+                      title="Reactivates this mod's flagged version(s) as clean and resolves the report."
+                    >
+                      Clear (false positive)
+                    </button>
+                  )}
                 </div>
               )}
             </li>
