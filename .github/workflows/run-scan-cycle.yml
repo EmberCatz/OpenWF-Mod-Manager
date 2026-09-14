@@ -1,0 +1,40 @@
+name: Run malware scan cycle
+
+# External heartbeat for apps/api/src/scan.ts's runScanCycle — Cloudflare's
+# native Cron Trigger on the Worker (wrangler.toml's [triggers]) is
+# correctly registered but was never observed to actually fire in
+# production (confirmed via wrangler tail and Workers Observability logs
+# over several hours of real uploads sitting in 'pending'). Rather than
+# block a non-critical feature on a Cloudflare support ticket, this just
+# hits the same job from outside on GitHub Actions' schedule instead —
+# safe to run alongside the native cron if it ever starts working on its
+# own, since runScanCycle is idempotent and budget-limited regardless of
+# what invokes it.
+#
+# 5 minutes is GitHub Actions' minimum schedule granularity (and even that
+# isn't exact — scheduled workflows can run late under GitHub's own load),
+# slower than the native cron's intended 1-minute cadence, but that's fine
+# here: this is "cheap insurance," not something latency-sensitive.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/internal/run-scan-cycle
+        run: |
+          status=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST \
+            -H "X-Scan-Trigger-Secret: ${{ secrets.SCAN_TRIGGER_SECRET }}" \
+            https://openwf-mod-manager-api.embercatdev.workers.dev/api/internal/run-scan-cycle)
+          echo "status: $status"
+          if [ "$status" != "204" ]; then
+            echo "::error::run-scan-cycle returned $status"
+            exit 1
+          fi

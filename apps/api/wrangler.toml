@@ -43,6 +43,7 @@ GITHUB_REPO = "OpenWF-Mods"
 #   wrangler secret put UPLOAD_API_KEY_SALT
 #   wrangler secret put GITHUB_TOKEN
 #   wrangler secret put VIRUSTOTAL_API_KEY
+#   wrangler secret put SCAN_TRIGGER_SECRET
 # and for local dev, put them in apps/api/.dev.vars (gitignored), see
 # .dev.vars.example).
 
@@ -53,3 +54,17 @@ GITHUB_REPO = "OpenWF-Mods"
 # VIRUSTOTAL_API_KEY is actually set.
 [triggers]
 crons = ["* * * * *"]
+
+# --- Observability ---
+# Turned on while debugging why the cron above wasn't firing in production
+# (wrangler tail only shows *live* traffic while it's running, so it can't
+# prove a cron never invoked over a period you weren't actively watching —
+# persisted invocation logs can). Codified here, not just toggled in the
+# dashboard, so a future `wrangler deploy` from this file doesn't silently
+# revert it.
+[observability]
+enabled = true
+
+  [observability.logs]
+  enabled = true
+  invocation_logs = true

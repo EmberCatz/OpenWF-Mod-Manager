@@ -39,13 +39,26 @@ function vtHeaders(env: Env): Record<string, string> {
 }
 
 // Called right after routes/mods.ts pushes new version files to GitHub.
-// INSERT OR IGNORE means an identical file (same sha256) re-uploaded under
-// a different mod/version is never queued twice — it just rides along on
-// whichever scan resolves first.
+// An identical file (same sha256) re-uploaded under a different mod/
+// version is never queued twice — it just rides along on whichever scan
+// resolves first. While still 'pending' though, this file's download_url
+// gets refreshed to the newest upload's URL rather than kept from
+// whichever upload happened to insert the row first: if that original
+// mod/version is later deleted (its GitHub release goes with it), the old
+// URL 404s and the scan can never actually fetch bytes to submit. Once a
+// checksum resolves to clean/flagged/error there's nothing left to fetch,
+// so the WHERE leaves a resolved row's URL alone.
 export async function queueFilesForScan(env: Env, files: ModVersionFile[]): Promise<void> {
   if (files.length === 0) return;
   await env.DB.batch(
-    files.map((f) => env.DB.prepare("INSERT OR IGNORE INTO file_scans (checksum, download_url) VALUES (?, ?)").bind(f.checksum, f.downloadUrl))
+    files.map((f) =>
+      env.DB
+        .prepare(
+          `INSERT INTO file_scans (checksum, download_url) VALUES (?, ?)
+           ON CONFLICT (checksum) DO UPDATE SET download_url = excluded.download_url WHERE file_scans.status = 'pending'`
+        )
+        .bind(f.checksum, f.downloadUrl)
+    )
   );
 }
 

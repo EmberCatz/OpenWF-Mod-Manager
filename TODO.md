@@ -347,9 +347,29 @@ can trail the launch.
       (free account at virustotal.com/gui/my-apikey) — a no-op until
       that's set, so it's safe to deploy ahead of getting the key. Also
       needs `migrations/0025_file_scans.sql` run against remote D1 (schema.sql
-      already has it for fresh installs). VT's response shapes are coded
-      from their documented v3 API, not live-tested against a real key yet
-      — worth a first real run before trusting the flagged/clean split.
+      already has it for fresh installs).
+
+      Live-tested after getting a real key and found two real bugs, both
+      fixed: (1) Cloudflare's native Cron Trigger (`wrangler.toml`'s
+      `[triggers]`) registers correctly — confirmed listed in the
+      dashboard — but was never actually observed to invoke `scheduled()`
+      in production across several hours (checked via `wrangler tail` and
+      Workers Observability logs, both showing zero Cron-triggered
+      invocations). Worked around rather than blocked on a Cloudflare
+      support ticket: a new authenticated `POST
+      /api/internal/run-scan-cycle` (shared-secret header, not the admin
+      key) runs the same job, hit every 5 minutes by
+      `.github/workflows/run-scan-cycle.yml` — needs a
+      `SCAN_TRIGGER_SECRET` set both as a Worker secret (`wrangler secret
+      put`) and a GitHub Actions repo secret (same value, Settings →
+      Secrets and variables → Actions — this half can't be done from the
+      CLI, someone needs to add it by hand). The native cron is left wired
+      up too in case it starts working on its own. (2) `queueFilesForScan`
+      used `INSERT OR IGNORE`, so a checksum's `file_scans.download_url`
+      never updated after the first upload — deleting a mod and
+      re-uploading the identical file left the row pointing at a 404'd
+      GitHub release forever, silently failing every scan attempt.
+      Switched to an upsert that refreshes the URL while still `'pending'`.
 - [ ] Narrow CORS from the current wide-open `app.use("*", cors())` —
       already flagged in `docs/architecture.md` as "worth narrowing once
       a production domain exists." This is that moment.

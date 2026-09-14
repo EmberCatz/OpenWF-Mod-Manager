@@ -30,6 +30,29 @@ app.get("/api/health", async (c) => {
   }
 });
 
+// POST /api/internal/run-scan-cycle — external trigger for src/scan.ts's
+// runScanCycle, hit on a schedule by .github/workflows/run-scan-cycle.yml.
+// This exists because Cloudflare's native Cron Trigger below (see
+// wrangler.toml's [triggers]) is correctly registered — confirmed via the
+// dashboard and via Observability logs — but was never actually observed
+// to invoke scheduled() in production. Rather than block on a Cloudflare
+// support ticket for a non-critical feature, this gives the same job an
+// external heartbeat. Safe to run alongside the native cron if it starts
+// working later — runScanCycle is idempotent and budget-limited regardless
+// of what invokes it. Registered before the CORS/IP-ban/maintenance-mode
+// gate for the same reason /api/health is: a scan cycle should keep
+// draining the queue during maintenance, and a GitHub Actions runner's
+// ever-changing IP shouldn't be able to get itself blocked by an unrelated
+// IP ban.
+app.post("/api/internal/run-scan-cycle", async (c) => {
+  const secret = c.env.SCAN_TRIGGER_SECRET;
+  if (!secret || c.req.header("X-Scan-Trigger-Secret") !== secret) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  await runScanCycle(c.env);
+  return c.body(null, 204);
+});
+
 // The Tauri app runs from a custom scheme (tauri://localhost) in production
 // and http://localhost:<port> in dev — allow both broadly since this API
 // has no cookie-based session to protect (auth is a bearer API key).
@@ -82,10 +105,12 @@ app.onError((err, c) => {
   return c.json({ error: err.message || "internal error" }, 500);
 });
 
-// Cloudflare's Cron Trigger (see wrangler.toml's [triggers]) fires this
-// once a minute — the finest granularity crons support, which happens to
-// line up exactly with VirusTotal's free-tier 4-requests/minute cap (see
-// src/scan.ts's SCAN_BUDGET_PER_RUN).
+// Cloudflare's Cron Trigger (see wrangler.toml's [triggers]) is *meant* to
+// fire this once a minute, but was never observed to actually do so in
+// production (see the /api/internal/run-scan-cycle route above, which is
+// the path actually driving the scan cycle right now). Left in place in
+// case it starts working — costs nothing to keep, and would just mean the
+// scan queue drains faster than the external trigger alone manages.
 export default {
   fetch: app.fetch,
   scheduled: async (_event, env, ctx) => {

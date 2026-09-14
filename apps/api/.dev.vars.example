@@ -14,3 +14,9 @@ GITHUB_TOKEN=github_pat_change-me
 # (needs a free account). Backs the scheduled malware scan of uploaded mod
 # files (src/scan.ts) — leave unset locally if you're not testing that.
 VIRUSTOTAL_API_KEY=
+
+# Optional. Shared secret for POST /api/internal/run-scan-cycle — the
+# external GitHub Actions workaround for Cloudflare's native Cron Trigger
+# not firing (see index.ts's comment on that route). Any long random
+# string; must match the GitHub repo's SCAN_TRIGGER_SECRET Actions secret.
+SCAN_TRIGGER_SECRET=
