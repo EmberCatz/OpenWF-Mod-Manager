@@ -16,6 +16,7 @@ const KEYS = {
   liveSettingsTabEnabled: "owmm.liveSettingsTabEnabled",
   splitViewEnabled: "owmm.splitViewEnabled",
   liveWideModeEnabled: "owmm.liveWideModeEnabled",
+  firstRunWizardDismissed: "owmm.firstRunWizardDismissed",
 } as const;
 
 // The OpenWF Bootstrapper's own HTTP interface (client_http_port in
@@ -58,6 +59,20 @@ export function getScriptsPath(): string | null {
 
 export function setScriptsPath(path: string): void {
   localStorage.setItem(KEYS.scriptsPath, path);
+}
+
+// Whether the new-user "point us at your Warframe folder" prompt
+// (components/FirstRunFolderWizard.tsx) has already been shown-and-skipped
+// once. It's a nudge, not a gate — Install still falls back to today's "set
+// the matching folder in Settings first" error (modActions.ts) if someone
+// skips this and only sets folders later, so this flag only needs to
+// suppress the prompt, not track anything more meaningful.
+export function isFirstRunWizardDismissed(): boolean {
+  return localStorage.getItem(KEYS.firstRunWizardDismissed) === "1";
+}
+
+export function dismissFirstRunWizard(): void {
+  localStorage.setItem(KEYS.firstRunWizardDismissed, "1");
 }
 
 export async function getApiKey(): Promise<string | null> {

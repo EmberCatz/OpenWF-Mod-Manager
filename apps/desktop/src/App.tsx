@@ -8,6 +8,7 @@ import Admin from "./views/Admin";
 import Settings from "./views/Settings";
 import Profile from "./views/Profile";
 import ToastHost from "./components/ToastHost";
+import FirstRunFolderWizard from "./components/FirstRunFolderWizard";
 import Avatar from "./components/Avatar";
 import { useAccount } from "./useAccount";
 import { logout as apiLogout } from "./api";
@@ -117,6 +118,7 @@ export default function App() {
       </footer>
 
       <ToastHost />
+      <FirstRunFolderWizard />
     </main>
   );
 }

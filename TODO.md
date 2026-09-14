@@ -355,11 +355,18 @@ can trail the launch.
       real health endpoint to point it at.
 
 ### First-run polish
-- [ ] First-run setup flow — detect/prompt for the Warframe folder and
-      walk through setting both install-folder paths before the first
-      Install attempt fails with "set the folder first." Matters most for
-      new/casual users a public launch brings in who don't already know
-      to route around this.
+- [x] First-run setup flow — `components/FirstRunFolderWizard.tsx`, mounted
+      in `App.tsx` next to `ToastHost`. Shows once on first launch (neither
+      install folder set yet, and it hasn't already been skipped — tracked
+      via `owmm.firstRunWizardDismissed` in `settings.ts`): a single
+      "Browse for Warframe folder…" button, then derives and previews both
+      `<root>/OpenWF/Metadata Patches` and `<root>/OpenWF/Scripts` paths for
+      the user to Save or Skip. Deliberately scoped down from "detect" to
+      manual-only (no Steam-library/registry scanning) and nudge-only, not
+      a hard gate — Skip leaves things exactly as before, so Install can
+      still hit modActions.ts's "set the matching folder in Settings first"
+      error if someone skips and never visits Settings. Revisit
+      auto-detection later if manual-only turns out not to be enough.
 
 ### Post-launch growth ideas (not blocking)
 - [ ] Follow an author / notify on their new uploads — Profile pages and
@@ -454,16 +461,23 @@ by an application-layer code change alone, or weren't in scope of either pass.
       `MAX_FILE_BYTES` on the upload side. Covered by two Rust unit tests
       (`cargo test`, first tests added to this crate) exercising both the
       abort-and-cleanup path and normal extraction under the cap.
-- [ ] **Scope down `GITHUB_TOKEN`.** Tried to verify this directly (the
-      token is in `apps/api/.dev.vars` locally, mirroring the Worker
-      secret) — it came back "Bad credentials" against the GitHub API, so
-      the local copy is stale/invalid and can't be used to check the real
-      production secret's scope from here. Still needs a human pass:
-      log into GitHub → Settings → Developer settings → confirm it's a
-      fine-grained PAT scoped to only `EmberCatz/OpenWF-Mods`'s
-      `contents` (release) permission, not a broad classic token — then
-      update both `.dev.vars` and the Worker's `wrangler secret put
-      GITHUB_TOKEN` with a fresh one if it needs re-scoping.
+- [x] **Scope down `GITHUB_TOKEN`.** Turned out there were two fine-grained
+      PATs on GitHub: `openwf-mod-worker` (correctly scoped to
+      `EmberCatz/OpenWF-Mods`, `Contents: Read and write` +
+      `Metadata: Read` only) and a decoy, `openwf-mod-manager-worker`,
+      which despite its description ("Used by the Cloudflare Worker to
+      create GitHub Releases for mod uploads") was actually scoped to the
+      wrong repo (`EmberCatz/OpenWF-Mod-Manager`) and would have 403'd if
+      ever used. The stale local `.dev.vars` value that returned "Bad
+      credentials" was unrelated to either — just dead. Fixed: put the
+      `openwf-mod-worker` value into `apps/api/.dev.vars`'s `GITHUB_TOKEN`,
+      confirmed `200` against `GET /repos/EmberCatz/OpenWF-Mods/releases`,
+      then `wrangler secret put GITHUB_TOKEN` on the Worker with the same
+      value. Verified end-to-end with a real upload, which correctly
+      created a release under `EmberCatz/OpenWF-Mods`.
+      Still open: delete or fix the description on the decoy
+      `openwf-mod-manager-worker` PAT on GitHub so it stops looking like
+      the real one.
 - [ ] Ship the Tauri auto-updater (already tracked under "Up next") —
       directly relevant here too: without it, a compromised first-party
       dependency or any other post-release fix has no fast path to already-
