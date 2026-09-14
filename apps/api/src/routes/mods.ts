@@ -374,7 +374,7 @@ export const AGGREGATE_COLUMNS = `
 // GET /mine, and routes/modders.ts's public profile) — each row is a mod
 // LEFT JOINed to just its newest version (v_id NULL when it has none yet).
 export const LATEST_VERSION_JOIN_COLUMNS =
-  "v.id as v_id, v.version, v.files, v.game_versions, v.changelog, v.created_at as v_created_at";
+  "v.id as v_id, v.version, v.files, v.game_versions, v.changelog, v.scan_status, v.created_at as v_created_at";
 
 export function rowToModWithLatestVersion(row: any): ModWithVersions {
   return {
@@ -388,6 +388,7 @@ export function rowToModWithLatestVersion(row: any): ModWithVersions {
             files: row.files,
             game_versions: row.game_versions,
             changelog: row.changelog,
+            scan_status: row.scan_status,
             created_at: row.v_created_at,
           }),
         ]
