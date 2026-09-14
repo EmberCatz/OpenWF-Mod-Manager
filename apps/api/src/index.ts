@@ -13,6 +13,22 @@ import { getSetting } from "./appSettings";
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Registered before the CORS/IP-ban/maintenance-mode gate below so an
+// uptime monitor gets a true D1-health signal — not blocked by an IP ban,
+// and not masked by maintenance mode (itself just an app_settings row in
+// the same D1, so a real D1 outage fails this the same way it'd fail that
+// check). GET / below stays a static ping; this is the one that actually
+// proves the database is reachable.
+app.get("/api/health", async (c) => {
+  try {
+    await c.env.DB.prepare("SELECT 1").first();
+    return c.json({ status: "ok" });
+  } catch (err) {
+    console.error("health check failed:", err);
+    return c.json({ status: "error", error: err instanceof Error ? err.message : "unknown error" }, 503);
+  }
+});
+
 // The Tauri app runs from a custom scheme (tauri://localhost) in production
 // and http://localhost:<port> in dev — allow both broadly since this API
 // has no cookie-based session to protect (auth is a bearer API key).

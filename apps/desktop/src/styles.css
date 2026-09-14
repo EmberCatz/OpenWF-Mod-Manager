@@ -277,6 +277,15 @@ textarea {
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
 }
 
+/* .button on an <a> (e.g. ErrorBoundary's "Report this error", which links
+   out to a GitHub issue instead of running a click handler) — <button>'s
+   above rules cover box model and typography, this just undoes <a>'s
+   inline/underlined defaults so it matches. */
+a.button {
+  display: inline-block;
+  text-decoration: none;
+}
+
 .button:hover:not(:disabled) {
   background: #2f3440;
   border-color: #3a4050;

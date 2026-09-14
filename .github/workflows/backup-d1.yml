@@ -1,0 +1,50 @@
+name: Backup D1 database
+
+# Weekly export of the openwf-mod-manager D1 database — the catalog (mods,
+# accounts, comments, moderation log) has no copy anywhere outside
+# Cloudflare's own infrastructure today, so this is cheap insurance against
+# an accidental `DELETE`, a bad migration, or a platform-side incident.
+# Uploaded as a workflow artifact (GitHub retains these 90 days by
+# default), not committed to git — the dump contains account emails,
+# password hashes, and IPs (see apps/api/schema.sql), which don't belong
+# sitting in git history indefinitely.
+#
+# Requires a CLOUDFLARE_API_TOKEN repo secret with D1 read access (same
+# scope as local `wrangler d1 export`) — this workflow can't create that
+# secret itself, it has to be added under Settings → Secrets and variables
+# → Actions.
+#
+# To restore from a downloaded artifact:
+#   wrangler d1 execute openwf-mod-manager --remote --file=d1-backup.sql
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # every Monday, 07:00 UTC — an hour after scrape-game-versions
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Export D1 database
+        run: npm run db:backup --workspace apps/api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: d1-backup-${{ github.run_id }}
+          path: apps/api/d1-backup.sql
+          retention-days: 90

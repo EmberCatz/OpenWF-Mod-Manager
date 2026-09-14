@@ -332,24 +332,27 @@ can trail the launch.
       Discord-adjacent tool.
 
 ### Cheap insurance (bundle into the same pass)
-- [ ] Crash/error reporting from `ErrorBoundary.tsx` — right now it only
-      `console.error`s and offers Reload, so a user hitting it never
-      surfaces to anyone unless they self-report. Cheapest fix: a
-      "Report this error" button pre-filling a GitHub issue (or reusing
-      `ReportButton`'s pattern) with the error message, component stack,
-      app version, and OS — no new backend needed.
-- [ ] Unhandled promise rejection capture — `ErrorBoundary` only catches
-      render-time throws, not async errors (a failed `invoke()`, the API
-      being down), which is probably the more common real-world failure.
-- [ ] Real DB-backed health endpoint — `GET /` currently returns a static
-      `{status: "ok"}` without touching D1, so it can't detect a D1
-      outage. A `GET /api/health` doing a trivial `SELECT 1`, fronted by
-      a free uptime monitor.
-- [ ] Scheduled D1 backup/export — nothing exports the catalog off
-      Cloudflare's own infrastructure today; a weekly `wrangler d1
-      export` (GitHub Actions cron, same pattern as
-      `scrape-game-versions.yml`) is cheap insurance for the catalog's
-      only copy.
+- [x] Crash/error reporting from `ErrorBoundary.tsx` — new `crashReport.ts`
+      builds a pre-filled GitHub "new issue" URL (message, component
+      stack, app version from `package.json`, OS sniffed from
+      `navigator.userAgent` — no new Tauri plugin needed) that a "Report
+      this error" link opens next to Reload. No new backend, as planned.
+- [x] Unhandled promise rejection capture — new `unhandledRejections.ts`,
+      installed once from `main.tsx`, listens for `window`'s
+      `unhandledrejection` event and turns it into a sticky error toast
+      via the existing `toast.ts` instead of vanishing into devtools.
+- [x] Real DB-backed health endpoint — `GET /api/health` in
+      `apps/api/src/index.ts` runs `SELECT 1` against D1 and returns 503
+      on failure. Registered *before* the CORS/IP-ban/maintenance-mode
+      gate so a banned IP or deliberate maintenance mode can't produce a
+      false-positive "D1 is down" reading.
+- [x] Scheduled D1 backup/export — `.github/workflows/backup-d1.yml`
+      (same shape as `scrape-game-versions.yml`) runs weekly, exports via
+      a new `db:backup` script in `apps/api/package.json`, and uploads
+      the dump as a 90-day workflow artifact rather than committing it
+      (contains emails/password hashes/IPs). Needs a `CLOUDFLARE_API_TOKEN`
+      repo secret added manually (Settings → Secrets and variables →
+      Actions) before the first scheduled run will succeed.
 - [ ] Public status page, even a static one — cheap trust signal and
       deflects "is the site down for everyone" reports once there's a
       real health endpoint to point it at.
