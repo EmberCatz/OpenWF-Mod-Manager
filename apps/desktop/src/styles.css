@@ -565,6 +565,17 @@ a.button {
   color: var(--accent-ink);
 }
 
+/* MyMods' per-version scan-status indicator (src/scan.ts) — informational
+   only, not shown at all once a version resolves to 'clean'. */
+.badge--scan-pending {
+  color: var(--muted);
+}
+
+.badge--scan-flagged {
+  background: #3a2226;
+  color: #ff8a8a;
+}
+
 .mod-card__tags {
   display: flex;
   flex-wrap: wrap;

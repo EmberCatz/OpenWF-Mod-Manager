@@ -64,6 +64,13 @@ export interface ModVersionFile {
   checksum: string; // sha256 of the file, hex-encoded
 }
 
+// Informational only, never a visibility gate — a version is public the
+// moment it's uploaded regardless of this value (see apps/api/src/scan.ts).
+// 'flagged' means VirusTotal found a positive on one of this version's
+// files; it doesn't get pulled automatically, just auto-reported for an
+// admin to review via the existing Reports queue.
+export type ModVersionScanStatus = "pending" | "clean" | "flagged" | "error";
+
 export interface ModVersion {
   id: number;
   modId: string;
@@ -71,6 +78,7 @@ export interface ModVersion {
   files: ModVersionFile[]; // one or more raw .pluto/.txt files, never a zip — see ModVersionFile
   gameVersions: string[]; // GAME_VERSIONS entries this version is tagged compatible with, or ["all"]
   changelog: string | null;
+  scanStatus: ModVersionScanStatus;
   createdAt: string; // ISO 8601
 }
 

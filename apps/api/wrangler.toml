@@ -42,5 +42,14 @@ GITHUB_REPO = "OpenWF-Mods"
 # Secrets (do NOT put these in this file — set them with:
 #   wrangler secret put UPLOAD_API_KEY_SALT
 #   wrangler secret put GITHUB_TOKEN
+#   wrangler secret put VIRUSTOTAL_API_KEY
 # and for local dev, put them in apps/api/.dev.vars (gitignored), see
 # .dev.vars.example).
+
+# --- Malware scan cron (src/scan.ts) ---
+# Fires the scheduled handler once a minute — the finest granularity Cron
+# Triggers support, which lines up with VirusTotal's free-tier 4-requests/
+# minute cap. A no-op (see scan.ts's early return) until
+# VIRUSTOTAL_API_KEY is actually set.
+[triggers]
+crons = ["* * * * *"]

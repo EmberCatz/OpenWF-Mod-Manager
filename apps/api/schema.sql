@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS mod_versions (
     github_release_id  INTEGER NOT NULL,        -- needed to delete/replace the release later
     game_versions      TEXT NOT NULL DEFAULT '["all"]', -- JSON array of GAME_VERSIONS entries, or ["all"]
     changelog          TEXT,
+    -- Informational only, never a visibility gate (this version is public
+    -- the moment it's uploaded, same as before) — see src/scan.ts. Worst-of
+    -- across this version's files' file_scans.status, recomputed by the
+    -- scheduled scan cycle as each file resolves.
+    scan_status        TEXT NOT NULL DEFAULT 'pending' CHECK (scan_status IN ('pending', 'clean', 'flagged', 'error')),
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (mod_id, version)
 );
@@ -85,6 +90,26 @@ CREATE TABLE IF NOT EXISTS mod_versions (
 CREATE INDEX IF NOT EXISTS idx_mod_versions_mod_id ON mod_versions (mod_id);
 CREATE INDEX IF NOT EXISTS idx_mods_category ON mods (category);
 CREATE INDEX IF NOT EXISTS idx_mods_theme ON mods (theme);
+
+-- Content-addressed VirusTotal scan state, one row per distinct uploaded
+-- file (keyed by the same sha256 checksum mod_versions.files[].checksum
+-- already carries) — see src/scan.ts. Keying by checksum instead of by
+-- version/file means an identical file re-uploaded under a different mod
+-- or version is never re-submitted to VT, which matters a lot against the
+-- free tier's 4-requests/minute cap. download_url is whichever copy's
+-- GitHub release asset URL was seen first, used only to fetch bytes to
+-- submit — it doesn't need to stay in sync with every mod that happens to
+-- reference this checksum.
+CREATE TABLE IF NOT EXISTS file_scans (
+    checksum       TEXT PRIMARY KEY,
+    download_url   TEXT NOT NULL,
+    vt_analysis_id TEXT,                    -- set once submitted to VT, while awaiting a completed analysis
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'clean', 'flagged', 'error')),
+    positives      INTEGER,                 -- engines that flagged it, once resolved
+    attempts       INTEGER NOT NULL DEFAULT 0, -- capped in src/scan.ts — repeated failures land on 'error' instead of retrying forever
+    submitted_at   TEXT,
+    resolved_at    TEXT
+);
 
 -- Backs the author-analytics downloads-over-time trend (TODO.md § Author
 -- analytics). mods.download_count (above) is a running total only —

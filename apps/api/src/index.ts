@@ -10,6 +10,7 @@ import { authenticate } from "./auth";
 import { clientIp } from "./rateLimit";
 import { isIpBanned } from "./ipBan";
 import { getSetting } from "./appSettings";
+import { runScanCycle } from "./scan";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -81,4 +82,13 @@ app.onError((err, c) => {
   return c.json({ error: err.message || "internal error" }, 500);
 });
 
-export default app;
+// Cloudflare's Cron Trigger (see wrangler.toml's [triggers]) fires this
+// once a minute — the finest granularity crons support, which happens to
+// line up exactly with VirusTotal's free-tier 4-requests/minute cap (see
+// src/scan.ts's SCAN_BUDGET_PER_RUN).
+export default {
+  fetch: app.fetch,
+  scheduled: async (_event, env, ctx) => {
+    ctx.waitUntil(runScanCycle(env));
+  },
+} satisfies ExportedHandler<Env>;

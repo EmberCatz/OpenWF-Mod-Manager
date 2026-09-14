@@ -315,12 +315,35 @@ can trail the launch.
       so a broken build can merge today.
 
 ### Content safety (blocking — highest risk given what mods can do)
-- [ ] Server-side file content validation on upload — already flagged in
-      `docs/architecture.md` § Security: "any file with an allowed
-      extension under the size cap is accepted as-is." At minimum, a
-      malware/heuristic scan (even a free-tier VirusTotal API check)
-      before accepting an upload, given mods are `.pluto` scripts that
-      run inside the Bootstrapper.
+- [x] Server-side file content validation on upload — malware scan via the
+      free-tier VirusTotal API, `apps/api/src/scan.ts`. Deliberately
+      scan-*after*-publish, not a gate: a version goes live the moment
+      it's uploaded exactly like before (chosen over hiding it until
+      clean — the alternative would've meant threading scan status through
+      every public read path, not proportionate at this project's current
+      user-base size). Uploads queue a content-addressed `file_scans` row
+      (keyed by sha256, so an identical file re-uploaded anywhere is never
+      re-submitted) instead of calling VT inline — a real scan takes
+      15-60s+ and the free tier caps at 4 requests/minute, so a burst of
+      uploads can't be scanned synchronously without either stalling or
+      blowing the quota. A new Cron Trigger (`wrangler.toml`'s
+      `[triggers]`, once/minute — the finest granularity crons support,
+      lining up with VT's per-minute cap) drains the queue within a fixed
+      budget: poll in-flight analyses first, then spend what's left
+      submitting new ones (hash lookup first — an instant resolve with no
+      upload needed if VT already has a verdict for that exact file).
+      `mod_versions.scan_status` (pending/clean/flagged/error) is
+      informational, shown to the author as a small badge in My Mods
+      ("Scanning…" / "Flagged") once their version resolves off 'pending'.
+      A flagged file auto-files a row in the existing `reports` table
+      (target_type 'mod') so it surfaces in Admin → Reports for a human to
+      pull — no parallel review UI. Needs a `VIRUSTOTAL_API_KEY` secret
+      (free account at virustotal.com/gui/my-apikey) — a no-op until
+      that's set, so it's safe to deploy ahead of getting the key. Also
+      needs `migrations/0025_file_scans.sql` run against remote D1 (schema.sql
+      already has it for fresh installs). VT's response shapes are coded
+      from their documented v3 API, not live-tested against a real key yet
+      — worth a first real run before trusting the flagged/clean split.
 - [ ] Narrow CORS from the current wide-open `app.use("*", cors())` —
       already flagged in `docs/architecture.md` as "worth narrowing once
       a production domain exists." This is that moment.
@@ -353,10 +376,6 @@ can trail the launch.
       (contains emails/password hashes/IPs). Needs a `CLOUDFLARE_API_TOKEN`
       repo secret added manually (Settings → Secrets and variables →
       Actions) before the first scheduled run will succeed.
-- [ ] Public status page, even a static one — cheap trust signal and
-      deflects "is the site down for everyone" reports once there's a
-      real health endpoint to point it at.
-
 ### First-run polish
 - [x] First-run setup flow — `components/FirstRunFolderWizard.tsx`, mounted
       in `App.tsx` next to `ToastHost`. Shows once on first launch (neither
@@ -382,6 +401,13 @@ can trail the launch.
       outgrows one Browse-page glance.
 - [ ] Favorites/wishlist independent of installed state (browse on one
       machine, install on another, or just "check this out later").
+- [ ] Public status page pointed at `GET /api/health` (now real and
+      D1-backed) — cheap trust signal and deflects "is the site down for
+      everyone" reports, but not worth it at the current user base size.
+      Revisit once there's actually enough traffic for outages to draw
+      more than a couple of confused reports; a free third-party
+      monitor's built-in status page (UptimeRobot, Better Uptime) pointed
+      at the endpoint is the low-effort option when it's time.
 
 ### Small fixes to bundle in
 - [ ] `README.md` still advertises "0–5 star ratings" — stale since the

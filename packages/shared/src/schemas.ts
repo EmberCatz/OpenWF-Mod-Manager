@@ -21,6 +21,8 @@ export const ModVersionFileSchema = z.object({
   checksum: z.string(),
 });
 
+export const ModVersionScanStatusSchema = z.enum(["pending", "clean", "flagged", "error"]);
+
 export const ModVersionSchema = z.object({
   id: z.number(),
   modId: z.string(),
@@ -28,6 +30,7 @@ export const ModVersionSchema = z.object({
   files: z.array(ModVersionFileSchema),
   gameVersions: z.array(z.string()),
   changelog: z.string().nullable(),
+  scanStatus: ModVersionScanStatusSchema,
   createdAt: z.string(),
 });
 

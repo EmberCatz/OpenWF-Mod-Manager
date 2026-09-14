@@ -86,6 +86,16 @@ export default function MyMods() {
             {mod.versions.map((v) => (
               <li key={v.id} className="my-mods__version-row">
                 <span>v{v.version}</span>
+                {v.scanStatus === "pending" && (
+                  <span className="badge badge--scan-pending" title="Automated malware scan still in progress — usually resolves within a few minutes.">
+                    Scanning…
+                  </span>
+                )}
+                {v.scanStatus === "flagged" && (
+                  <span className="badge badge--scan-flagged" title="Flagged by an automated VirusTotal scan and reported for admin review.">
+                    Flagged
+                  </span>
+                )}
                 <span className="muted">{new Date(v.createdAt).toLocaleDateString()}</span>
                 <button
                   className="button button--danger my-mods__version-delete"

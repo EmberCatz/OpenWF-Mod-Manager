@@ -5,6 +5,7 @@ import { checkRateLimit, clientIp } from "../rateLimit";
 import { logModerationAction } from "../moderation";
 import { getSetting } from "../appSettings";
 import { createRelease, uploadReleaseAsset, deleteReleaseBestEffort } from "../github";
+import { queueFilesForScan } from "../scan";
 import { containsLink, containsProfanity } from "../contentFilters";
 import { ALL_VERSIONS_TAG, GAME_VERSIONS } from "@openwf-mod-manager/shared";
 import type {
@@ -316,6 +317,7 @@ export function rowToVersion(row: any): ModVersion {
     files: JSON.parse(row.files ?? "[]"),
     gameVersions: JSON.parse(row.game_versions ?? '["all"]'),
     changelog: row.changelog,
+    scanStatus: row.scan_status ?? "pending",
     createdAt: row.created_at,
   };
 }
@@ -824,6 +826,7 @@ mods.post("/", async (c) => {
     await deleteReleaseBestEffort(c.env, release.id);
     throw e;
   }
+  await queueFilesForScan(c.env, versionFiles);
 
   return c.json({ id: modId }, 201);
 });
@@ -890,6 +893,7 @@ mods.post("/:id/versions", async (c) => {
     await deleteReleaseBestEffort(c.env, release.id);
     throw e;
   }
+  await queueFilesForScan(c.env, versionFiles);
 
   return c.json({ id: modId, version: metadata.version }, 201);
 });
