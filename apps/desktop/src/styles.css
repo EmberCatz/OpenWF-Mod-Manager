@@ -576,6 +576,19 @@ a.button {
   color: #ff8a8a;
 }
 
+/* Mod Detail's public per-version "Scanned via VirusTotal" badge —
+   deliberately quieter than .badge--installed's solid fill (this is a
+   secondary, automated signal, not the primary status of the row). */
+.badge--scan-clean {
+  color: #7fd9a0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.badge--scan-clean .btn-icon {
+  margin-right: 0.3rem;
+}
+
 .mod-card__tags {
   display: flex;
   flex-wrap: wrap;

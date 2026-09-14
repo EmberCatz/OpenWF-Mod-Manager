@@ -9,7 +9,7 @@ import { getReviewerId } from "../reviewerId";
 import { setLiked } from "../likedMods";
 import { getApiKey } from "../settings";
 import { useAccount } from "../useAccount";
-import { CheckCircleIcon, FileIcon, RefreshIcon, TrashIcon } from "../icons";
+import { CheckCircleIcon, FileIcon, RefreshIcon, ShieldCheckIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import LikeButton from "./LikeButton";
 import FilePreview from "./FilePreview";
@@ -298,6 +298,14 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                       {isInstalled && (
                         <span className="badge badge--installed">
                           <CheckCircleIcon className="btn-icon" /> Installed
+                        </span>
+                      )}
+                      {version.scanStatus === "clean" && (
+                        <span
+                          className="badge badge--scan-clean"
+                          title="Automatically scanned via VirusTotal — no engine flagged this file. Not a manual review or a guarantee, just one more signal."
+                        >
+                          <ShieldCheckIcon className="btn-icon" /> Scanned via VirusTotal
                         </span>
                       )}
                     </div>
