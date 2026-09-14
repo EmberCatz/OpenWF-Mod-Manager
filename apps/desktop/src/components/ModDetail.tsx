@@ -309,6 +309,18 @@ export default function ModDetail({ modId, onBack, onChanged }: ModDetailProps) 
                         </span>
                       )}
                     </div>
+                    {version.scanStatus === "pending" && (
+                      <div className="version-scan-banner version-scan-banner--pending">
+                        Automated malware scan still in progress for this version — usually resolves within a few
+                        minutes of upload.
+                      </div>
+                    )}
+                    {version.scanStatus === "flagged" && (
+                      <div className="version-scan-banner version-scan-banner--flagged">
+                        ⚠ An automated VirusTotal scan flagged a file in this version. It's been reported for admin
+                        review — install with caution until that's resolved.
+                      </div>
+                    )}
                     <div className="version-history__files">
                       {version.files.map((file) => (
                         <button

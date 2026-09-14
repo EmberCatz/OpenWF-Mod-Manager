@@ -1067,6 +1067,30 @@ a.button {
   white-space: pre-wrap;
 }
 
+/* Per-version malware-scan banners in Mod Detail's version history —
+   pending reuses .dev-tools-warning's amber palette, flagged reuses
+   .mod-detail__risk-notes's red palette, so both match colors already
+   established elsewhere for "still working" vs "something's wrong". */
+.version-scan-banner {
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.version-scan-banner--pending {
+  background: #3a2e1a;
+  border: 1px solid #6e5a2f;
+  color: #f0d9a8;
+}
+
+.version-scan-banner--flagged {
+  background: #3a2226;
+  border: 1px solid #6e2f34;
+  color: #ff8a8a;
+}
+
 .mod-detail__install-instructions {
   background: var(--panel-alt);
   border: 1px solid var(--border);
