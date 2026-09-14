@@ -5,6 +5,7 @@ import { closeProfile } from "../profileNav";
 import Avatar from "../components/Avatar";
 import ModDetail from "../components/ModDetail";
 import ModCard from "../components/ModCard";
+import ExternalLink from "../components/ExternalLink";
 
 // A creator's public profile — opened from any AuthorLink across the app
 // (mod cards, ModDetail, comments) via profileNav.ts, not a normal tab.
@@ -49,9 +50,7 @@ export default function Profile({ accountId }: { accountId: string }) {
               </span>
               {profile.githubUrl && (
                 <div>
-                  <a href={profile.githubUrl} target="_blank" rel="noreferrer">
-                    GitHub
-                  </a>
+                  <ExternalLink href={profile.githubUrl}>GitHub</ExternalLink>
                 </div>
               )}
             </div>

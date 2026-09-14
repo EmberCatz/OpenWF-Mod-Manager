@@ -36,6 +36,7 @@ import { clearAccountSettingsRequest, peekAccountSettingsRequest, subscribeAccou
 import { RefreshIcon, TrashIcon } from "../icons";
 import { toast } from "../toast";
 import Avatar from "../components/Avatar";
+import ExternalLink from "../components/ExternalLink";
 
 type AuthMode = "login" | "signup";
 type AuthStatus = { kind: "idle" | "working" };
@@ -343,9 +344,7 @@ export default function Settings() {
               <span className="hint">
                 Powers the Server WebUI sub-tab under Live Settings — only relevant if you run a local
                 SpaceNinjaServer private server. Defaults to 80; use 443 if yours runs over HTTPS (see{" "}
-                <a href="https://about.openwf.io/hardening-security" target="_blank" rel="noreferrer">
-                  hardening your server with TLS
-                </a>
+                <ExternalLink href="https://about.openwf.io/hardening-security">hardening your server with TLS</ExternalLink>
                 ) — any other HTTPS port isn't detected and will fail to load here.
               </span>
               <input
@@ -566,9 +565,7 @@ export default function Settings() {
             </p>
             <p className="hint">
               Found a bug in the app itself?{" "}
-              <a href="https://github.com/EmberCatz/OpenWF-Mod-Manager/issues" target="_blank" rel="noreferrer">
-                Report it on GitHub Issues
-              </a>
+              <ExternalLink href="https://github.com/EmberCatz/OpenWF-Mod-Manager/issues">Report it on GitHub Issues</ExternalLink>
               .
             </p>
           </div>

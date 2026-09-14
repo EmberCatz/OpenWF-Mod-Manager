@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { buildIssueUrl } from "../crashReport";
+import ExternalLink from "./ExternalLink";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -44,9 +45,9 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
             <button className="button" onClick={() => window.location.reload()}>
               Reload
             </button>
-            <a className="button" href={issueUrl} target="_blank" rel="noreferrer">
+            <ExternalLink className="button" href={issueUrl}>
               Report this error
-            </a>
+            </ExternalLink>
           </div>
         </div>
       );
